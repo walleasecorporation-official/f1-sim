@@ -18,11 +18,28 @@
 
 <!-- ================= HUD ================= -->
 <div id="hud">
-    <div id="timingBox" class="hud-panel">
-        <div class="lap-row"><span class="label">LAP</span> <b id="lap">1</b><span class="dim">/<span id="lapTotal">3</span></span></div>
-        <div id="lapTime">0:00.000</div>
-        <div class="sub-row"><span class="label">LAST</span><span id="lastLap">--:--.---</span></div>
-        <div class="sub-row"><span class="label">BEST</span><span id="bestLap" class="best">--:--.---</span></div>
+    <!-- 왼쪽: 순위 · 랩 타이밍 · 타이어/연료 -->
+    <div id="leftCol">
+        <div id="timingBox" class="hud-panel">
+            <div id="posRow"><b id="pos">P1</b><span class="dim">/<span id="posTotal">1</span></span><span id="gap"></span></div>
+            <div class="lap-row"><span class="label">LAP</span> <b id="lap">1</b><span class="dim">/<span id="lapTotal">3</span></span></div>
+            <div id="lapTime">0:00.000</div>
+            <div class="sub-row last-row"><span class="label">LAST</span><span id="lastLap">--:--.---</span></div>
+            <div class="sub-row"><span class="label">BEST</span><span id="bestLap" class="best">--:--.---</span></div>
+        </div>
+
+        <div id="tyreBox" class="hud-panel">
+            <div id="tyreMain">
+                <b id="tyreCompound">M</b>
+                <div id="tyreGrid">
+                    <div class="tyre" id="tyreFL">0%</div>
+                    <div class="tyre" id="tyreFR">0%</div>
+                    <div class="tyre" id="tyreRL">0%</div>
+                    <div class="tyre" id="tyreRR">0%</div>
+                </div>
+            </div>
+            <div id="fuel">FUEL 0.0 kg</div>
+        </div>
     </div>
 
     <div id="infoBox">
@@ -31,15 +48,36 @@
         <div id="sectorName" class="hud-chip"></div>
     </div>
 
-    <div id="dash" class="hud-panel">
-        <div id="rpmLeds">
-            <i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
-            <i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i>
-            <i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i>
+    <!-- 아래 가운데: 경고등 · 배지 · 대시 (속도/기어/ERS) -->
+    <div id="hudBottom">
+        <div id="lights">
+            <span id="lampTC" class="lamp">TC</span>
+            <span id="lampABS" class="lamp">ABS</span>
+            <span id="lampESP" class="lamp">ESP</span>
+            <span id="warnLock" class="warn-lamp">LOCK-UP</span>
+            <span id="warnSpin" class="warn-lamp">WHEELSPIN</span>
+            <span id="infoTow" class="info-lamp tow">SLIPSTREAM</span>
+            <span id="infoDirty" class="info-lamp dirty">DIRTY AIR</span>
         </div>
-        <div id="dashRow">
-            <div id="speedBox"><div id="speed">0</div><div id="unit">KM/H</div></div>
-            <div id="gear">N</div>
+        <div id="badges">
+            <span id="otBadge" class="badge">OVERTAKE</span>
+            <span id="aeroBadge" class="badge">Z-MODE</span>
+        </div>
+        <div id="dash" class="hud-panel">
+            <div id="rpmLeds">
+                <i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
+                <i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i>
+                <i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i>
+            </div>
+            <div id="dashRow">
+                <div id="speedBox"><div id="speed">0</div><div id="unit">KM/H</div></div>
+                <div id="gear">N</div>
+            </div>
+            <div id="ersRow">
+                <span class="label">ERS</span>
+                <div id="ersBar"><i id="ersFill"></i></div>
+                <span id="ersState"></span>
+            </div>
         </div>
     </div>
 
@@ -63,6 +101,12 @@
 
     <div id="tiltMeter"><div id="tiltIndicator"></div></div>
 
+    <!-- 왼손 엄지: 부스트(누르는 동안) · X-MODE(탭, 수동 에어로일 때만) -->
+    <div id="pushBtns">
+        <button id="btnBoost" class="push-btn boost" aria-label="부스트 (오버테이크 모드)">BOOST<small>OVERTAKE</small></button>
+        <button id="btnAero" class="push-btn aero" aria-label="X 모드">X-MODE<small>직선</small></button>
+    </div>
+
     <div class="pad-left">
         <button id="btnLeft" class="steer-btn" aria-label="왼쪽">◀</button>
         <button id="btnRight" class="steer-btn" aria-label="오른쪽">▶</button>
@@ -81,48 +125,108 @@
 
 <!-- ================= START ================= -->
 <div id="start" class="overlay">
-    <div class="panel">
-        <div class="brand"><span class="stripe"></span>F1 RACING SIMULATOR</div>
-        <h1>KOREA<br><small>INTERNATIONAL CIRCUIT · YEONGAM</small></h1>
-        <div class="facts">
-            <div><b>5.6</b><span>KM</span></div>
-            <div><b>18</b><span>TURNS</span></div>
-            <div><b>3</b><span>LAPS</span></div>
-            <div><b>2026</b><span>SPEC CAR</span></div>
+    <div class="panel start-panel">
+        <div class="start-info">
+            <div class="brand"><span class="stripe"></span>F1 RACING SIMULATOR</div>
+            <h1>KOREA<br><small>INTERNATIONAL CIRCUIT · YEONGAM</small></h1>
+            <div class="facts">
+                <div><b>5.6</b><span>KM</span></div>
+                <div><b>18</b><span>TURNS</span></div>
+                <div><b id="factLaps">3</b><span>LAPS</span></div>
+                <div><b>2026</b><span>SPEC CAR</span></div>
+            </div>
+
+            <div class="controls desktop-only">
+                <div><kbd>W</kbd> 가속</div>
+                <div><kbd>S</kbd> 브레이크 / 후진</div>
+                <div><kbd>A</kbd> <kbd>D</kbd> 조향</div>
+                <div><kbd>Shift</kbd> 부스트(오버테이크)</div>
+                <div><kbd>E</kbd> X-MODE (수동일 때)</div>
+                <div><kbd>V</kbd> 카메라 전환</div>
+                <div><kbd>R</kbd> 트랙 복귀</div>
+                <div><kbd>P</kbd> 일시정지</div>
+            </div>
+
+            <div class="controls mobile-only">
+                <div>📱 폰을 <b>핸들처럼 기울여</b> 조향</div>
+                <div>오른쪽 <b>THROTTLE</b> · 왼쪽 <b>BRAKE</b></div>
+                <div><b>BOOST</b> 누르는 동안 오버테이크 모드</div>
+                <div><b>X-MODE</b> 직선에서 저항↓ (수동 에어로일 때)</div>
+                <div>◎ 버튼: 현재 자세를 기울기 영점으로</div>
+            </div>
+            <p class="note mobile-only">기울기 조향은 HTTPS 주소에서만 동작합니다. 센서를 쓸 수 없으면 좌/우 버튼이 자동으로 나타나요.</p>
         </div>
 
-        <div class="controls desktop-only">
-            <div><kbd>W</kbd> 가속</div>
-            <div><kbd>S</kbd> 브레이크 / 정지 후 후진</div>
-            <div><kbd>A</kbd> <kbd>D</kbd> 조향</div>
-            <div><kbd>V</kbd> 카메라 전환</div>
-            <div><kbd>R</kbd> 트랙 복귀</div>
-            <div><kbd>P</kbd> 일시정지</div>
+        <div class="start-settings">
+            <div class="opt">
+                <span class="opt-label">랩 수</span>
+                <div class="seg" id="optLaps">
+                    <button type="button" data-v="3">3</button>
+                    <button type="button" data-v="5">5</button>
+                    <button type="button" data-v="10">10</button>
+                </div>
+            </div>
+
+            <div class="opt">
+                <span class="opt-label">타이어</span>
+                <div class="seg" id="optCompound">
+                    <button type="button" data-v="soft" class="tyre-chip"><i></i>SOFT</button>
+                    <button type="button" data-v="medium" class="tyre-chip"><i></i>MEDIUM</button>
+                    <button type="button" data-v="hard" class="tyre-chip"><i></i>HARD</button>
+                </div>
+                <div class="opt-hint" id="hintCompound"></div>
+            </div>
+
+            <div class="opt">
+                <span class="opt-label">주행 보조</span>
+                <div class="seg two-line" id="optAssists">
+                    <button type="button" data-v="beginner">초보<small>TC·ABS·스핀방지</small></button>
+                    <button type="button" data-v="standard">보통<small>TC·ABS</small></button>
+                    <button type="button" data-v="pro">프로<small>보조 없음</small></button>
+                </div>
+                <div class="opt-hint" id="hintAssists"></div>
+            </div>
+
+            <div class="opt">
+                <span class="opt-label">상대 차량</span>
+                <div class="stepper" id="optOpponents">
+                    <button type="button" data-d="-1" aria-label="줄이기">−</button>
+                    <b id="valOpponents">5</b>
+                    <button type="button" data-d="1" aria-label="늘리기">+</button>
+                    <span class="opt-hint inline">대 (0~7)</span>
+                </div>
+            </div>
+
+            <div class="opt">
+                <span class="opt-label">액티브 에어로</span>
+                <div class="seg" id="optAero">
+                    <button type="button" data-v="auto">자동</button>
+                    <button type="button" data-v="manual">수동</button>
+                </div>
+                <div class="opt-hint" id="hintAero"></div>
+            </div>
+
+            <div class="opt opt-selects">
+                <label class="setting">그래픽
+                    <select id="qualitySelect">
+                        <option value="low">낮음 (저사양)</option>
+                        <option value="medium">중간</option>
+                        <option value="high">높음</option>
+                    </select>
+                </label>
+                <label class="setting mobile-only">조향 감도
+                    <select id="sensSelect">
+                        <option value="low">낮음</option>
+                        <option value="normal" selected>보통</option>
+                        <option value="high">높음</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="start-footer">
+                <button id="startBtn" class="primary">RACE START</button>
+            </div>
         </div>
-
-        <div class="controls mobile-only">
-            <div>📱 폰을 <b>핸들처럼 기울여</b> 조향</div>
-            <div>오른쪽 <b>THROTTLE</b> · 왼쪽 <b>BRAKE</b></div>
-            <div>◎ 버튼: 현재 자세를 기울기 영점으로</div>
-            <label class="setting">조향 감도
-                <select id="sensSelect">
-                    <option value="low">낮음</option>
-                    <option value="normal" selected>보통</option>
-                    <option value="high">높음</option>
-                </select>
-            </label>
-        </div>
-
-        <label class="setting">그래픽
-            <select id="qualitySelect">
-                <option value="low">낮음 (저사양)</option>
-                <option value="medium">중간</option>
-                <option value="high">높음</option>
-            </select>
-        </label>
-
-        <button id="startBtn" class="primary">RACE START</button>
-        <p class="note mobile-only">기울기 조향은 HTTPS 주소에서만 동작합니다. 센서를 쓸 수 없으면 좌/우 버튼이 자동으로 나타나요.</p>
     </div>
 </div>
 
@@ -135,7 +239,7 @@
 </div>
 
 <div id="finish" class="overlay hidden">
-    <div class="panel small">
+    <div class="panel small finish-panel">
         <div class="brand"><span class="stripe"></span>CHEQUERED FLAG</div>
         <h2>RACE FINISHED</h2>
         <div id="results"></div>

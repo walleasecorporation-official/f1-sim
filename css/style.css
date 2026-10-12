@@ -9,10 +9,20 @@
     --panel-border:rgba(255,255,255,.12);
     --text:#f4f5f7;
     --dim:#9aa1aa;
+    --ers:#ffd21f;
+    --harvest:#36c8ff;
+    --overtake:#b04dff;
+    --aero:#1fd47a;
     --safe-l:env(safe-area-inset-left, 0px);
     --safe-r:env(safe-area-inset-right, 0px);
     --safe-t:env(safe-area-inset-top, 0px);
     --safe-b:env(safe-area-inset-bottom, 0px);
+    /* 모바일 페달 / 조향 버튼 크기 (BOOST 위치, 경고등 폭 계산에 같이 쓴다) */
+    --pedal-w:clamp(96px, 15vw, 150px);
+    --pedal-h:clamp(120px, 34vh, 190px);
+    --steer-w:clamp(80px, 13vw, 120px);
+    --steer-h:clamp(80px, 24vh, 130px);
+    --pad-gap:12px;
 }
 
 html,body{
@@ -68,15 +78,41 @@ body.playing #minimapWrap{ opacity:1; }
     -webkit-backdrop-filter:blur(6px);
 }
 
-#timingBox{
+/* ---- 왼쪽 열: 순위·타이밍 → 타이어·연료 (세로로 쌓아 겹치지 않게) ---- */
+#leftCol{
     position:absolute;
     top:calc(18px + var(--safe-t));
     left:calc(18px + var(--safe-l));
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:8px;
+}
+
+#timingBox{
     padding:10px 14px;
     min-width:168px;
     border-left:4px solid var(--red);
     font-variant-numeric:tabular-nums;
 }
+#posRow{
+    display:flex;
+    align-items:baseline;
+    gap:3px;
+    padding-bottom:4px;
+    margin-bottom:4px;
+    border-bottom:1px solid rgba(255,255,255,.1);
+}
+#pos{ font-size:24px; font-weight:800; font-style:italic; line-height:1; }
+#posRow .dim{ font-size:14px; }
+#gap{
+    margin-left:auto;
+    padding-left:10px;
+    font-size:13px;
+    font-weight:700;
+    color:#c9ced5;
+}
+#gap.close{ color:var(--aero); }
 .lap-row{ font-size:15px; letter-spacing:1px; }
 .lap-row b{ font-size:22px; }
 .label{ color:var(--dim); font-size:11px; letter-spacing:2px; margin-right:6px; }
@@ -84,6 +120,60 @@ body.playing #minimapWrap{ opacity:1; }
 #lapTime{ font-size:24px; font-weight:700; margin:2px 0 4px; }
 .sub-row{ display:flex; justify-content:space-between; font-size:13px; }
 .best{ color:#c86bff; }
+
+/* ---- 타이어 (FL FR / RL RR) + 연료 ---- */
+#tyreBox{
+    padding:8px 10px;
+    font-variant-numeric:tabular-nums;
+}
+#tyreMain{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+#tyreCompound{
+    width:30px;
+    height:30px;
+    flex:none;
+    border-radius:50%;
+    border:3px solid #f2c200;
+    color:#f2c200;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:14px;
+    font-weight:800;
+    background:#0d0f12;
+}
+#tyreGrid{
+    display:grid;
+    grid-template-columns:repeat(2, 38px);
+    gap:4px 6px;
+}
+.tyre{
+    height:22px;
+    border-radius:5px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:10px;
+    font-weight:800;
+    color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,.6);
+    background:#555;
+    transition:background-color .4s;
+}
+.tyre.cold{ background:#2d68d8; }
+.tyre.ok{ background:#1f9d4c; }
+.tyre.hot{ background:#d8352a; }
+#fuel{
+    margin-top:6px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:1px;
+    color:#c9ced5;
+}
+#fuel.low{ color:#ff4a3d; animation:blink .6s ease-in-out infinite alternate; }
 
 #infoBox{
     position:absolute;
@@ -105,11 +195,70 @@ body.playing #minimapWrap{ opacity:1; }
 .hud-chip:empty{ display:none; }
 #surface.warn{ background:rgba(40,120,40,.75); }
 
-#dash{
+/* ---- 아래 가운데: 경고등 → 배지 → 대시 ---- */
+#hudBottom{
     position:absolute;
     left:50%;
     bottom:calc(18px + var(--safe-b));
     transform:translateX(-50%);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+}
+
+#lights{
+    display:flex;
+    flex-wrap:wrap-reverse;
+    justify-content:center;
+    gap:4px;
+    max-width:440px;
+}
+.lamp, .warn-lamp, .info-lamp{
+    padding:2px 7px;
+    border-radius:4px;
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:1px;
+    line-height:14px;
+    white-space:nowrap;
+}
+.lamp{
+    background:rgba(12,14,18,.6);
+    border:1px solid rgba(255,255,255,.14);
+    color:rgba(255,255,255,.32);
+}
+.lamp.on{ background:#ffb100; border-color:#ffb100; color:#141414; box-shadow:0 0 10px rgba(255,177,0,.6); }
+.lamp.na{ display:none; }
+.warn-lamp, .info-lamp{ display:none; border:1px solid transparent; color:#fff; }
+.warn-lamp.on, .info-lamp.on{ display:inline-block; }
+.warn-lamp{ background:var(--red); box-shadow:0 0 10px rgba(225,6,0,.6); }
+.info-lamp.tow{ background:rgba(24,140,255,.85); }
+.info-lamp.dirty{ background:rgba(120,126,136,.85); }
+
+#badges{
+    display:flex;
+    gap:6px;
+}
+.badge{
+    padding:3px 9px;
+    border-radius:5px;
+    font-size:11px;
+    font-weight:800;
+    letter-spacing:1.5px;
+    line-height:15px;
+    white-space:nowrap;
+    background:rgba(12,14,18,.6);
+    border:1px solid rgba(255,255,255,.14);
+    color:rgba(255,255,255,.35);
+}
+#otBadge.armed{ background:rgba(176,77,255,.25); border-color:var(--overtake); color:#e2c4ff; }
+#otBadge.active{ background:var(--overtake); border-color:#e2c4ff; color:#fff; animation:pulse .5s ease-in-out infinite alternate; }
+#aeroBadge{ min-width:66px; text-align:center; }
+#aeroBadge.x{ background:var(--aero); border-color:var(--aero); color:#04160b; }
+#aeroBadge.avail{ border-color:var(--aero); color:#7dffbc; animation:blink .6s ease-in-out infinite alternate; }
+
+#dash{
     padding:8px 16px 10px;
     min-width:260px;
 }
@@ -150,6 +299,51 @@ body.playing #minimapWrap{ opacity:1; }
     background:rgba(255,255,255,.08);
 }
 
+/* ERS 배터리 막대 */
+#ersRow{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-top:7px;
+}
+#ersRow .label{ font-size:9px; margin:0; letter-spacing:1.5px; }
+#ersBar{
+    flex:1;
+    height:7px;
+    border-radius:4px;
+    background:rgba(255,255,255,.12);
+    overflow:hidden;
+}
+#ersFill{
+    display:block;
+    width:100%;
+    height:100%;
+    background:linear-gradient(90deg, #f5b400, var(--ers));
+    transform-origin:0 50%;
+    transform:scaleX(.85);
+    transition:transform .2s linear, background .3s;
+}
+#ersFill.low{ background:linear-gradient(90deg, #c22, #ff6a3a); }
+#ersFill.ot{ background:linear-gradient(90deg, #7a2bd6, var(--overtake)); }
+#ersState{
+    width:54px;
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-align:right;
+}
+#ersState.deploy{ color:var(--ers); }
+#ersState.harvest{ color:var(--harvest); }
+
+@keyframes pulse{
+    from{ opacity:.65; box-shadow:0 0 4px var(--overtake); }
+    to{ opacity:1; box-shadow:0 0 16px var(--overtake); }
+}
+@keyframes blink{
+    from{ opacity:1; }
+    to{ opacity:.35; }
+}
+
 #message{
     position:absolute;
     top:22%;
@@ -172,7 +366,7 @@ body.playing #minimapWrap{ opacity:1; }
 
 #fps{
     position:absolute;
-    left:calc(18px + var(--safe-l));
+    right:calc(18px + var(--safe-r));
     bottom:calc(8px + var(--safe-b));
     font-size:11px;
     color:#fff;
@@ -288,15 +482,15 @@ body.playing #minimapWrap{ opacity:1; }
     bottom:calc(14px + var(--safe-b));
     display:flex;
     align-items:flex-end;
-    gap:12px;
+    gap:var(--pad-gap);
 }
 .pad-left{ left:calc(14px + var(--safe-l)); }
 .pad-right{ right:calc(14px + var(--safe-r)); }
 
 .pedal{
     position:relative;
-    width:clamp(96px, 15vw, 150px);
-    height:clamp(120px, 34vh, 190px);
+    width:var(--pedal-w);
+    height:var(--pedal-h);
     border-radius:18px;
     font-size:12px;
     font-weight:800;
@@ -327,8 +521,8 @@ body.playing #minimapWrap{ opacity:1; }
 
 .steer-btn{
     display:none;
-    width:clamp(80px, 13vw, 120px);
-    height:clamp(80px, 24vh, 130px);
+    width:var(--steer-w);
+    height:var(--steer-h);
     border-radius:50%;
     background:rgba(12,14,18,.55);
     box-shadow:inset 0 0 0 2px rgba(255,255,255,.3);
@@ -338,6 +532,53 @@ body.playing #minimapWrap{ opacity:1; }
 
 /* 버튼 조향 모드: 왼손 = ◀ ▶,  오른손 = BRAKE + THROTTLE */
 #mobileControls.mode-buttons .steer-btn{ display:block; }
+
+/* ---- BOOST / X-MODE: 왼쪽 패드 바로 위 (왼손 엄지) ----
+   기울기 모드: 브레이크 페달 위,  버튼 모드: ◀ ▶ 위 */
+#pushBtns{
+    position:absolute;
+    left:calc(14px + var(--safe-l));
+    bottom:calc(14px + var(--pedal-h) + 10px + var(--safe-b));
+    display:flex;
+    flex-direction:row;
+    align-items:flex-end;
+    gap:8px;
+}
+#mobileControls.mode-buttons #pushBtns{
+    bottom:calc(14px + var(--steer-h) + 10px + var(--safe-b));
+}
+.push-btn{
+    width:88px;
+    height:48px;
+    border-radius:12px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    font-size:13px;
+    font-weight:800;
+    letter-spacing:1.5px;
+    line-height:1.1;
+    color:rgba(255,255,255,.55);
+    background:rgba(12,14,18,.6);
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.2);
+    transition:transform .06s, background .15s, box-shadow .15s, color .15s;
+}
+.push-btn small{
+    font-size:8px;
+    letter-spacing:1px;
+    font-weight:700;
+    opacity:.8;
+}
+.push-btn.pressed{ transform:scale(.94); }
+/* BOOST: 사용 가능 = 보라 테두리, 사용 중 = 보라로 빛남 */
+.push-btn.boost.armed{ color:#fff; background:rgba(176,77,255,.35); box-shadow:inset 0 0 0 2px var(--overtake), 0 0 14px rgba(176,77,255,.55); }
+.push-btn.boost.active{ color:#fff; background:var(--overtake); box-shadow:inset 0 0 0 2px #e2c4ff, 0 0 20px var(--overtake); animation:pulse .5s ease-in-out infinite alternate; }
+/* X-MODE: 수동 에어로일 때만 표시 */
+.push-btn.aero{ display:none; width:78px; }
+#mobileControls.aero-manual .push-btn.aero{ display:flex; }
+.push-btn.aero.avail{ color:#fff; background:rgba(31,212,122,.28); box-shadow:inset 0 0 0 2px var(--aero), 0 0 12px rgba(31,212,122,.5); }
+.push-btn.aero.on{ color:#04160b; background:var(--aero); box-shadow:inset 0 0 0 2px #b9ffd9; }
 
 #rotateHint{
     position:fixed;
@@ -383,6 +624,8 @@ body.playing #minimapWrap{ opacity:1; }
     border-radius:16px;
     box-shadow:0 20px 60px rgba(0,0,0,.5);
     margin-right:auto;
+    touch-action:pan-y;
+    -webkit-overflow-scrolling:touch;
 }
 .panel.small{ margin:auto; text-align:center; width:min(360px, 100%); }
 
@@ -443,7 +686,7 @@ body.playing #minimapWrap{ opacity:1; }
     font-size:13px;
     margin-bottom:14px;
 }
-.controls.mobile-only{ grid-template-columns:1fr; }
+.controls.mobile-only{ grid-template-columns:1fr; gap:4px; }
 kbd{
     display:inline-block;
     min-width:24px;
@@ -501,19 +744,217 @@ kbd{
     line-height:1.5;
 }
 
-#results{
-    display:grid;
-    gap:6px;
-    font-variant-numeric:tabular-nums;
+/* =========================================================
+   START SCREEN — 레이스 설정
+   좁은 화면: 한 줄,  가로 폰(낮은 화면): 왼쪽 정보 / 오른쪽 설정 2열
+========================================================= */
+.start-panel{
+    width:min(500px, 100%);
+    padding:20px 26px 0;
 }
-#results div{
+.start-panel h1{ margin:8px 0 12px; }
+.start-panel .facts{ margin-bottom:12px; }
+.start-panel .controls{ margin-bottom:10px; gap:5px 14px; }
+.start-settings{
+    padding-top:4px;
+}
+
+.opt{
+    display:grid;
+    grid-template-columns:76px minmax(0, 1fr);
+    align-items:center;
+    gap:3px 10px;
+    margin:0 0 9px;
+}
+.opt-label{
+    font-size:12px;
+    color:#c9ced5;
+    line-height:1.2;
+    letter-spacing:.5px;
+    word-break:keep-all;
+}
+.opt-hint{
+    grid-column:2;
+    font-size:11px;
+    color:var(--dim);
+    line-height:1.3;
+    word-break:keep-all;
+}
+.opt-hint.inline{ grid-column:auto; margin-left:2px; }
+
+.seg{
+    display:flex;
+    gap:5px;
+}
+.panel .seg button{
+    flex:1 1 0;
+    min-width:0;
+    width:auto;
+    margin:0;
+    padding:7px 4px;
+    border-radius:7px;
+    border:1px solid #3a3f47;
+    background:#1b1f24;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.5px;
+    color:#aeb4bc;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    transition:background .12s, border-color .12s, color .12s;
+}
+.panel .seg button.on{
+    color:#fff;
+    background:rgba(225,6,0,.22);
+    border-color:var(--red);
+    box-shadow:inset 0 0 0 1px var(--red);
+}
+.panel .seg.two-line button{ padding:5px 3px; line-height:1.15; }
+.seg.two-line button small{
+    display:block;
+    margin-top:2px;
+    font-size:9.5px;
+    font-weight:600;
+    letter-spacing:0;
+    color:var(--dim);
+}
+.seg.two-line button.on small{ color:#ffd1cf; }
+
+/* 타이어 칩: 컴파운드 색 링 (--chip 은 hud.js 에서 TYRE_COMPOUNDS 색으로 설정) */
+.tyre-chip i{
+    display:inline-block;
+    width:11px;
+    height:11px;
+    margin-right:5px;
+    vertical-align:-1px;
+    border-radius:50%;
+    border:3px solid var(--chip, #888);
+    background:#111;
+}
+.panel .seg .tyre-chip.on{
+    background:rgba(255,255,255,.08);
+    border-color:var(--chip, #fff);
+    box-shadow:inset 0 0 0 1px var(--chip, #fff);
+}
+
+.stepper{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+.panel .stepper button{
+    width:36px;
+    height:30px;
+    margin:0;
+    padding:0;
+    border-radius:7px;
+    border:1px solid #3a3f47;
+    font-size:18px;
+    line-height:1;
+    letter-spacing:0;
+}
+.panel .stepper button:disabled{ opacity:.35; cursor:default; }
+.stepper b{ min-width:18px; text-align:center; font-size:17px; font-variant-numeric:tabular-nums; }
+
+.opt.opt-selects{
+    display:flex;
+    flex-wrap:wrap;
+    gap:2px 18px;
+}
+.opt-selects .setting{ margin:0; flex:1 1 170px; white-space:nowrap; }
+
+/* 시작 버튼은 스크롤해도 항상 보이게 (패널 아래쪽에 고정) */
+.start-footer{
+    position:sticky;
+    bottom:0;
+    padding:6px 0 20px;
+    background:linear-gradient(180deg, rgba(10,12,15,0), rgb(10,12,15) 10px);
+}
+.start-footer #startBtn{ margin:0; }
+
+/* =========================================================
+   RESULTS — 결승 순위표
+========================================================= */
+.panel.finish-panel{ width:min(520px, 100%); }
+#results{
+    font-variant-numeric:tabular-nums;
+    text-align:left;
+}
+.res-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    gap:8px;
+    margin:-6px 0 10px;
+}
+.res-head b{ font-size:34px; font-style:italic; font-weight:800; }
+.res-head span{ color:var(--dim); font-size:15px; letter-spacing:1px; }
+.res-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+}
+.res-table th{
+    padding:3px 6px;
+    font-size:9px;
+    font-weight:600;
+    letter-spacing:2px;
+    color:var(--dim);
+    text-align:left;
+}
+.res-table td{
+    padding:6px;
+    border-top:1px solid rgba(255,255,255,.07);
+    white-space:nowrap;
+}
+.res-table td.p{ width:28px; font-weight:800; text-align:center; }
+.res-table td.n{ font-weight:700; letter-spacing:1px; }
+.res-table td.t, .res-table td.b, .res-table th:nth-child(3), .res-table th:nth-child(4){ text-align:right; }
+.res-table td.dim{ color:var(--dim); }
+.res-table td.fl{ color:#c86bff; }
+.res-table tr.me td{ background:rgba(225,6,0,.24); }
+.res-table tr.me td:first-child{ box-shadow:inset 3px 0 0 var(--red); }
+.res-table .sw{
+    display:inline-block;
+    width:4px;
+    height:14px;
+    margin-right:8px;
+    vertical-align:-2px;
+    border-radius:2px;
+}
+.res-sum{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    margin-bottom:10px;
+}
+.res-sum div{
     display:flex;
     justify-content:space-between;
+    align-items:center;
     padding:8px 12px;
     border-radius:8px;
     background:rgba(255,255,255,.06);
 }
-#results span{ color:var(--dim); letter-spacing:2px; font-size:12px; }
+.res-sum span{ color:var(--dim); letter-spacing:1.5px; font-size:11px; white-space:nowrap; margin-right:8px; }
+.res-sum b{ white-space:nowrap; }
+/* RACE AGAIN 버튼은 순위표가 길어도 항상 보이게 */
+.finish-panel #againBtn{
+    position:sticky;
+    bottom:0;
+    box-shadow:0 8px 0 rgb(10,12,15), 0 -8px 14px rgba(10,12,15,.9);
+}
+/* main.js 의 대체 결과(ai.js·renderRaceResults 없을 때) */
+#results > div:not([class]){
+    display:flex;
+    justify-content:space-between;
+    padding:8px 12px;
+    margin-bottom:6px;
+    border-radius:8px;
+    background:rgba(255,255,255,.06);
+}
+#results > div:not([class]) span{ color:var(--dim); letter-spacing:2px; font-size:12px; }
 
 .is-desktop .mobile-only{ display:none !important; }
 .is-mobile .desktop-only{ display:none !important; }
@@ -521,15 +962,32 @@ kbd{
 /* =========================================================
    MOBILE LAYOUT
 ========================================================= */
-.is-mobile #timingBox{
+.is-mobile #leftCol{
     top:calc(8px + var(--safe-t));
     left:calc(10px + var(--safe-l));
-    padding:6px 10px;
-    min-width:128px;
+    gap:5px;
 }
-.is-mobile #lapTime{ font-size:18px; }
-.is-mobile .lap-row b{ font-size:17px; }
+.is-mobile #timingBox{
+    padding:5px 9px;
+    min-width:124px;
+}
+.is-mobile #posRow{ padding-bottom:2px; margin-bottom:2px; }
+.is-mobile #pos{ font-size:18px; }
+.is-mobile #posRow .dim{ font-size:11px; }
+.is-mobile #gap{ font-size:11px; padding-left:6px; }
+.is-mobile #lapTime{ font-size:17px; margin:0 0 1px; }
+.is-mobile .lap-row{ font-size:12px; }
+.is-mobile .lap-row b{ font-size:15px; }
+.is-mobile .label{ font-size:9px; letter-spacing:1.5px; }
 .is-mobile .sub-row{ font-size:11px; }
+.is-mobile .last-row{ display:none; }
+
+.is-mobile #tyreBox{ padding:4px 7px 5px; }
+.is-mobile #tyreMain{ gap:7px; }
+.is-mobile #tyreCompound{ width:22px; height:22px; border-width:2px; font-size:11px; }
+.is-mobile #tyreGrid{ grid-template-columns:repeat(2, 30px); gap:3px 4px; }
+.is-mobile .tyre{ height:16px; font-size:9px; border-radius:4px; }
+.is-mobile #fuel{ margin-top:3px; font-size:9px; letter-spacing:.5px; }
 
 .is-mobile #minimapWrap{
     top:calc(8px + var(--safe-t));
@@ -543,36 +1001,134 @@ kbd{
 .is-mobile #infoBox{
     top:calc(124px + var(--safe-t));
     right:calc(10px + var(--safe-r));
+    gap:4px;
 }
 .is-mobile .hud-chip{ font-size:10px; padding:4px 7px; }
 .is-mobile #cameraMode{ display:none; }
 
-.is-mobile #dash{
+.is-mobile #hudBottom{
     bottom:calc(10px + var(--safe-b));
+    gap:4px;
+}
+.is-mobile #lights{ max-width:min(250px, calc(100vw - 4 * var(--pedal-w) - 76px)); gap:3px; }
+.is-mobile .lamp, .is-mobile .warn-lamp, .is-mobile .info-lamp{ font-size:8.5px; padding:1px 5px; line-height:12px; letter-spacing:.5px; }
+.is-mobile #badges{ gap:4px; }
+.is-mobile .badge{ font-size:9px; padding:2px 6px; line-height:12px; letter-spacing:1px; }
+.is-mobile #aeroBadge{ min-width:52px; }
+.is-mobile #dash{
     min-width:0;
-    padding:6px 12px 8px;
+    padding:5px 12px 7px;
 }
 .is-mobile #rpmLeds i{ width:8px; height:8px; }
-.is-mobile #rpmLeds{ gap:3px; }
+.is-mobile #rpmLeds{ gap:3px; margin-bottom:4px; }
 .is-mobile #speed{ font-size:30px; }
+.is-mobile #unit{ font-size:8px; }
 .is-mobile #gear{ font-size:30px; width:40px; height:40px; line-height:40px; }
+.is-mobile #dashRow{ gap:16px; }
+.is-mobile #ersRow{ margin-top:4px; gap:4px; }
+.is-mobile #ersBar{ height:5px; }
+.is-mobile #ersState{ width:42px; font-size:7.5px; }
 .is-mobile #message{ font-size:15px; top:30%; }
+.is-mobile #fps{ right:auto; left:50%; bottom:auto; top:calc(70px + var(--safe-t)); transform:translateX(-50%); }
 
 @media (orientation:portrait){
-    .is-mobile #dash{ bottom:calc(clamp(110px, 20vh, 170px) + 26px + var(--safe-b)); }
-    .is-mobile .pedal{ height:clamp(110px, 20vh, 170px); width:clamp(70px, 21vw, 120px); }
+    .is-mobile{
+        --pedal-w:clamp(70px, 21vw, 120px);
+        --pedal-h:clamp(110px, 20vh, 170px);
+        --steer-w:clamp(60px, 18vw, 90px);
+        --steer-h:clamp(60px, 18vw, 90px);
+        --pad-gap:8px;
+    }
+    .is-mobile #hudBottom{ bottom:calc(clamp(110px, 20vh, 170px) + 26px + var(--safe-b)); }
+    .is-mobile #lights{ max-width:190px; }
     .is-mobile .pedal{ font-size:11px; letter-spacing:1px; }
-    .is-mobile .steer-btn{ width:clamp(60px, 18vw, 90px); height:clamp(60px, 18vw, 90px); }
-    .is-mobile .pad-left, .is-mobile .pad-right{ gap:8px; }
-    .is-mobile #mobileTop{ top:calc(112px + var(--safe-t)); left:calc(10px + var(--safe-l)); transform:none; }
-    .is-mobile #tiltMeter{ top:calc(160px + var(--safe-t)); }
+    /* 세로: 위쪽 버튼은 미니맵·노면 칩 아래 오른쪽 */
+    .is-mobile #mobileTop{ top:calc(180px + var(--safe-t)); left:auto; right:calc(10px + var(--safe-r)); transform:none; }
+    .is-mobile #tiltMeter{ top:calc(234px + var(--safe-t)); }
+    .is-mobile #fps{ top:calc(250px + var(--safe-t)); }
+    /* 세로: BOOST 위에 X-MODE (대시와 겹치지 않게 좁게) */
+    .is-mobile #pushBtns{ flex-direction:column-reverse; align-items:flex-start; gap:6px; }
+    .is-mobile .push-btn, .is-mobile .push-btn.aero{ width:min(76px, var(--pedal-w)); height:46px; font-size:12px; letter-spacing:1px; }
     .is-mobile #message{ white-space:normal; text-align:center; width:88vw; }
 }
 
+/* 아주 낮은 가로 화면 (iOS 사파리 툴바 등): 왼쪽 열을 줄여 BOOST 자리 확보 */
+@media (orientation:landscape) and (max-height:380px){
+    .is-mobile #timingBox .sub-row{ display:none; }
+    .is-mobile #tyreBox{ display:flex; align-items:center; gap:7px; }
+    .is-mobile #fuel{ margin-top:0; width:36px; line-height:1.2; }
+    .is-mobile .push-btn{ height:44px; }
+}
+
+/* =========================================================
+   SHORT SCREENS (가로 폰)
+========================================================= */
 @media (max-height:420px){
-    .panel{ padding:16px 18px; }
+    .overlay{ padding:8px; }
+    .panel{ padding:14px 18px; }
     .panel h1{ font-size:28px; margin:6px 0 8px; }
-    .facts{ margin-bottom:8px; }
+    .panel h1 small{ margin-top:4px; font-size:10px; }
+    .facts{ margin-bottom:8px; gap:6px; }
+    .facts div{ padding:5px 4px; }
     .facts b{ font-size:16px; }
+    .controls{ font-size:12px; }
     .panel button{ padding:10px; margin-top:8px; }
+    .panel h2{ margin:4px 0 10px; }
+    .note{ margin-top:6px; line-height:1.35; }
+    .start-panel{ padding:14px 18px 0; }
+    .opt{ margin-bottom:6px; }
+    .panel .seg button{ padding:6px 4px; }
+    .panel .seg.two-line button{ padding:4px 3px; }
+    .panel .stepper button{ height:28px; }
+    .start-footer{ padding-bottom:12px; }
+    .setting{ font-size:12px; }
+    .setting select{ padding:4px 6px; }
+    .finish-panel h2{ font-size:18px; margin:2px 0 6px; }
+    .res-head{ margin:-4px 0 6px; }
+    .res-head b{ font-size:26px; }
+    .res-table td{ padding:3px 6px; }
+    .res-table{ font-size:12px; }
+    .res-sum{ margin-bottom:6px; }
+    .res-sum div{ padding:5px 10px; }
+}
+
+/* 좁은 화면 (세로 폰): 칩 글자가 잘리지 않게 */
+@media (max-width:420px){
+    .start-panel{ padding:16px 16px 0; }
+    .panel h1{ font-size:34px; }
+    .facts{ gap:6px; }
+    .facts span{ letter-spacing:1px; }
+    .opt{ grid-template-columns:60px minmax(0, 1fr); gap:3px 8px; }
+    .panel .seg button{ font-size:11px; letter-spacing:0; padding:7px 2px; }
+    .tyre-chip i{ margin-right:3px; width:10px; height:10px; border-width:2.5px; }
+    .seg.two-line button small{ font-size:8.5px; letter-spacing:-.2px; }
+    .res-sum{ grid-template-columns:1fr; }
+    .panel.finish-panel{ padding:18px 16px; }
+}
+
+/* 넓고 낮은 화면 (가로 폰 / 작은 태블릿): 정보 | 설정 2열 */
+@media (min-width:600px) and (max-height:560px){
+    .start-panel{
+        width:min(880px, 100%);
+        margin:auto;
+        display:grid;
+        grid-template-columns:minmax(0, .85fr) minmax(0, 1.15fr);
+        column-gap:24px;
+        align-items:start;
+    }
+    .start-info{ position:sticky; top:0; }
+}
+/* 작은 가로 폰 (iPhone SE 등) */
+@media (min-width:600px) and (max-width:759px) and (max-height:560px){
+    .start-panel{ grid-template-columns:minmax(0, .8fr) minmax(0, 1.2fr); column-gap:16px; padding:12px 14px 0; }
+    .start-panel h1{ font-size:24px; }
+    .start-panel h1 small{ letter-spacing:1.2px; }
+    .start-panel .brand{ letter-spacing:2px; }
+    .start-panel .facts{ gap:4px; }
+    .start-panel .facts span{ letter-spacing:.5px; }
+    .start-panel .controls{ font-size:11.5px; }
+    .opt{ grid-template-columns:58px minmax(0, 1fr); gap:3px 8px; }
+    .panel .seg button{ font-size:11px; letter-spacing:0; padding:6px 2px; }
+    .tyre-chip i{ margin-right:3px; width:10px; height:10px; border-width:2.5px; }
+    .seg.two-line button small{ font-size:8.5px; letter-spacing:-.2px; }
 }

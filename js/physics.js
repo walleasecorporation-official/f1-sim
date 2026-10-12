@@ -317,28 +317,33 @@ function otherCars(){
  * 반환: {tow: 0..1 (항력 감소), dirty: 0..1 (다운포스 손실), gapAhead: 앞차까지 m}
  */
 const wakeResult = {tow: 0, dirty: 0, gapAhead: Infinity};
+const SLIPSTREAM_DRAG_CUT = .12;   // 바로 뒤(정렬)일 때 최대 항력 감소
+const DIRTY_AIR_DF_LOSS = .10;     // 바로 뒤일 때 최대 다운포스 손실 (2026 규정은 후류 영향 축소 목표)
+
+function wakeConsider(myProgress, myLateral, p, lat){
+    const d = (p - myProgress) * SAMPLE_SPACING;
+    if(d <= 0) return;
+    if(d < wakeResult.gapAhead) wakeResult.gapAhead = d;
+    if(d > 80) return;
+    const latDiff = Math.abs(lat - myLateral);
+    if(latDiff > 3) return;
+    const align = 1 - latDiff / 3;
+    wakeResult.tow = Math.max(wakeResult.tow, Math.pow(1 - d / 80, 1.4) * align);
+    if(d < 45) wakeResult.dirty = Math.max(wakeResult.dirty, (1 - d / 45) * align);
+}
+
 function computeWake(progress, lateral, self){
     wakeResult.tow = 0;
     wakeResult.dirty = 0;
     wakeResult.gapAhead = Infinity;
     const cars = otherCars();
-    const consider = (p, lat) => {
-        const d = (p - progress) * SAMPLE_SPACING;
-        if(d <= 0) return;
-        if(d < wakeResult.gapAhead) wakeResult.gapAhead = d;
-        if(d > 80) return;
-        const latDiff = Math.abs(lat - lateral);
-        if(latDiff > 3) return;
-        const align = 1 - latDiff / 3;
-        wakeResult.tow = Math.max(wakeResult.tow, Math.pow(1 - d / 80, 1.4) * align);
-        if(d < 45) wakeResult.dirty = Math.max(wakeResult.dirty, (1 - d / 45) * align);
-    };
-    for(const c of cars){
+    for(let i = 0; i < cars.length; i++){
+        const c = cars[i];
         if(c === self) continue;
-        consider(c.progress, c.lateral);
+        wakeConsider(progress, lateral, c.progress, c.lateral);
     }
     if(self && self !== physics){
-        consider(physics.progress, physics.lateral);
+        wakeConsider(progress, lateral, physics.progress, physics.lateral);
     }
     return wakeResult;
 }
@@ -557,8 +562,8 @@ function integrateDynamics(h, driveDemand, assists, throttle){
     const balance = Z.balance + (X.balance - Z.balance) * k;
     const qd = .5 * 1.2 * u * u;
     const ge = groundEffectFactor(physics.rideHeight);
-    const downforce = qd * ClA * ge * (1 - .16 * physics.dirtyAir);
-    const drag = qd * CdA * (1 - .32 * physics.slipstream) + qd * .08 * (ge - 1);
+    const downforce = qd * ClA * ge * (1 - DIRTY_AIR_DF_LOSS * physics.dirtyAir);
+    const drag = qd * CdA * (1 - SLIPSTREAM_DRAG_CUT * physics.slipstream) + qd * .08 * (ge - 1);
     physics.downforce = downforce;
     physics.dragForce = drag;
 
@@ -747,7 +752,7 @@ function updateSuspension(dt){
         const ride = RIDE_HEIGHT_STATIC - physics.heave;
         const qd = .5 * 1.2 * physics.u * physics.u;
         const ClA = AERO_MODES.Z.ClA + (AERO_MODES.X.ClA - AERO_MODES.Z.ClA) * physics.aeroBlend;
-        const df = qd * ClA * groundEffectFactor(ride) * (1 - .16 * physics.dirtyAir);
+        const df = qd * ClA * groundEffectFactor(ride) * (1 - DIRTY_AIR_DF_LOSS * physics.dirtyAir);
         const acc = (df + bump - k * physics.heave - c * physics.heaveVel) / m;
         physics.heaveVel += acc * hh;
         physics.heave += physics.heaveVel * hh;
