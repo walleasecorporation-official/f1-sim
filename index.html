@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F1 Racing Simulator</title>
+
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="start">
+    <div class="panel">
+        <h1>F1 RACING</h1>
+
+        <p>
+            W / ↑ : 가속<br>
+            S / ↓ : 브레이크 / 정지 후 후진<br>
+            A / D : 조향<br>
+            V : 1인칭 / 3인칭<br>
+            R : 리셋
+        </p>
+
+        <button id="startBtn">
+            RACE START
+        </button>
+    </div>
+</div>
+
+<div id="minimapWrap">
+    <div id="minimapTitle">TRACK MAP</div>
+    <canvas id="minimap" width="156" height="156"></canvas>
+</div>
+
+<div id="hud">
+
+    <div id="position">
+        POSITION&nbsp;&nbsp;1 / 1<br>
+        LAP&nbsp;&nbsp;<span id="lap">1</span> / 3
+    </div>
+
+    <div id="cameraMode">
+        ONBOARD
+    </div>
+
+    <div id="surface">
+        ASPHALT
+    </div>
+
+    <div id="speedBox">
+        <div id="speed">0</div>
+        <div id="unit">KM/H</div>
+    </div>
+
+    <div id="gear">N</div>
+
+    <div id="rpmBar">
+        <div id="rpmFill"></div>
+    </div>
+
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script src="script.js"></script>
+
+</body>
+</html>
