@@ -419,6 +419,24 @@ for(const side of [1, -1]){
 }
 
 /* ---------------------------------------------------------
+   GRAVEL TRAPS — 저속 코너 바깥 (물리: 그립 0.5, 큰 저항)
+--------------------------------------------------------- */
+const gravelTexture = makeCanvasTexture(256, 256, (ctx, w, h) => {
+    ctx.fillStyle = "#b9a98a";
+    ctx.fillRect(0, 0, w, h);
+    noiseFill(ctx, w, h, envRng, 16000, ["#a08f70", "#cdbf9f", "#8f7f63", "#d8ccb0", "#9a8a6c"], 1, 2.6, .8);
+});
+const gravelMaterial = new THREE.MeshLambertMaterial({map: gravelTexture, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1});
+for(const side of [1, -1]){
+    const mask = gravelMask[side > 0 ? 0 : 1];
+    const inner = ROAD_WIDTH / 2 + KERB_WIDTH + .04, outer = WALL_OFFSET - .8;
+    const runs = collectRuns(0, SAMPLE_COUNT, 1, i => mask[i] && isClearOfTrack(i, side, [outer], 2));
+    if(runs.length){
+        addTrackMesh(extrudeRuns(runs, side, [[ROAD_WIDTH / 2 + .05, .008], [outer, .008]], {uScale: 8, vScale: 8}), gravelMaterial, {shadow: true});
+    }
+}
+
+/* ---------------------------------------------------------
    WALLS + CATCH FENCE
 --------------------------------------------------------- */
 for(const side of [1, -1]){

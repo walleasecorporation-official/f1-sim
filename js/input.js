@@ -10,9 +10,11 @@ const Input = {
     throttle: false,
     brake: false,
     steer: 0,            // +1 = 왼쪽, -1 = 오른쪽
+    boost: false,        // 오버테이크 모드 (Shift / BOOST 버튼, 누르고 있는 동안)
     tiltActive: false,
     tiltAngle: 0,        // 보정 후 기울기 (도)
     onCameraToggle: null,
+    onAeroToggle: null,
     onRecover: null,
     onPause: null
 };
@@ -29,6 +31,7 @@ function updateKeyboardAxes(){
     const left = !!(keyState.KeyA || keyState.ArrowLeft);
     const right = !!(keyState.KeyD || keyState.ArrowRight);
     Input.steer = (left ? 1 : 0) - (right ? 1 : 0);
+    Input.boost = !!(keyState.ShiftLeft || keyState.ShiftRight || keyState.Space) || touchBoost;
 }
 
 let keyboardUsed = !IS_MOBILE;
@@ -40,6 +43,7 @@ window.addEventListener("keydown", e => {
     keyState[e.code] = true;
     if(e.code === "KeyV" || e.code === "KeyC") Input.onCameraToggle && Input.onCameraToggle();
     if(e.code === "KeyR") Input.onRecover && Input.onRecover();
+    if(e.code === "KeyE") Input.onAeroToggle && Input.onAeroToggle();
     if(e.code === "KeyP" || e.code === "Escape") Input.onPause && Input.onPause();
     updateKeyboardAxes();
 });
@@ -63,6 +67,7 @@ window.addEventListener("blur", () => {
    pointer 이벤트 + pointerId 추적으로 멀티터치(가속+조향 동시) 지원
 --------------------------------------------------------- */
 const touchSteer = {left: false, right: false};
+let touchBoost = false;
 
 function bindHoldButton(el, onChange){
     if(!el) return;
@@ -95,6 +100,8 @@ bindHoldButton(document.getElementById("btnThrottle"), on => { Input.throttle = 
 bindHoldButton(document.getElementById("btnBrake"), on => { Input.brake = on; });
 bindHoldButton(document.getElementById("btnLeft"), on => { touchSteer.left = on; });
 bindHoldButton(document.getElementById("btnRight"), on => { touchSteer.right = on; });
+bindHoldButton(document.getElementById("btnBoost"), on => { touchBoost = on; Input.boost = on; });
+bindTapButton(document.getElementById("btnAero"), () => Input.onAeroToggle && Input.onAeroToggle());
 bindTapButton(document.getElementById("btnCamera"), () => Input.onCameraToggle && Input.onCameraToggle());
 bindTapButton(document.getElementById("btnRecover"), () => Input.onRecover && Input.onRecover());
 bindTapButton(document.getElementById("btnCenter"), () => calibrateTilt());

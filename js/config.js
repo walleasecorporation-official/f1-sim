@@ -75,3 +75,27 @@ const QUALITY_NAME = (() => {
 const QUALITY = QUALITY_PRESETS[QUALITY_NAME];
 
 document.documentElement.classList.add(IS_MOBILE ? "is-mobile" : "is-desktop");
+
+/* ---------------------------------------------------------
+   RACE SETTINGS (시작 화면에서 변경)
+--------------------------------------------------------- */
+const ASSIST_PRESETS = {
+    // 초보: 트랙션 컨트롤 + ABS + 스핀 방지(ESP)
+    beginner: {tc: true, abs: true, stability: true},
+    // 보통: 트랙션 컨트롤 + ABS
+    standard: {tc: true, abs: true, stability: false},
+    // 프로: 실제 F1 규정과 동일하게 보조 장치 없음
+    pro: {tc: false, abs: false, stability: false}
+};
+
+const raceSettings = {
+    laps: 3,
+    compound: "medium",                       // soft | medium | hard
+    assists: IS_MOBILE ? "beginner" : "standard",
+    aeroAuto: true,                           // 액티브 에어로 자동 전환
+    opponents: IS_MOBILE ? 4 : 5
+};
+
+function currentAssists(){
+    return ASSIST_PRESETS[raceSettings.assists] || ASSIST_PRESETS.standard;
+}

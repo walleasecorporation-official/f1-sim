@@ -31,8 +31,9 @@ function updateCamera(dt){
     driverHead.visible = mode !== "ONBOARD";
 
     // 노면 진동 (연석/잔디/벽 충돌)
-    const rumble = (physics.onKerb ? .012 : 0) + (physics.surface === "grass" ? .02 : 0);
-    camState.shake = rumble * Math.min(1, Math.abs(physics.speed) / 20) + physics.wallHit * .05;
+    const rumble = (physics.onKerb ? .012 : 0) + (physics.surface === "grass" ? .02 : 0) + (physics.surface === "gravel" ? .035 : 0);
+    camState.shake = rumble * Math.min(1, Math.abs(physics.speed) / 20) + physics.wallHit * .05
+        + Math.min(.02, physics.porpoise * .08) + (physics.lockFront || physics.lockRear ? .01 : 0);
     const sx = (Math.random() - .5) * camState.shake;
     const sy = (Math.random() - .5) * camState.shake;
 
@@ -193,13 +194,25 @@ async function startRace(){
     ui.start.classList.add("hidden");
     ui.finish.classList.add("hidden");
     ui.pause.classList.add("hidden");
-    resetCar();
+    setupGrid();
     resetRace();
     camState.initialized = false;
     gameState = "playing";
     document.body.classList.add("playing");
     updateRotateHint();
     lastTime = performance.now();
+}
+
+/** 시작 화면 설정을 반영하고 그리드에 차량을 세운다 (플레이어는 맨 뒤에서 출발) */
+function setupGrid(){
+    if(typeof applyStartScreenSettings === "function") applyStartScreenSettings();
+    applyRaceSettingsToCar();
+    hudEls.lapTotal.textContent = raceSettings.laps;
+    const opponents = typeof initAICars === "function" ? raceSettings.opponents : 0;
+    if(typeof initAICars === "function") initAICars(opponents);
+    playerGridSlot = opponents;
+    resetCar();
+    if(typeof resetAICars === "function") resetAICars();
 }
 
 function pauseGame(){
@@ -219,6 +232,11 @@ function resumeGame(){
 
 onRaceFinished = () => {
     gameState = "finished";
+    if(typeof renderRaceResults === "function"){
+        renderRaceResults(ui.results);
+        setTimeout(() => ui.finish.classList.remove("hidden"), 600);
+        return;
+    }
     ui.results.innerHTML =
         "<div><span>TOTAL</span><b>" + formatTime(race.time) + "</b></div>" +
         "<div><span>BEST LAP</span><b>" + formatTime(race.bestLap) + "</b></div>" +
@@ -241,6 +259,12 @@ if(ui.qualitySelect){
 }
 
 Input.onCameraToggle = toggleCamera;
+Input.onAeroToggle = () => { if(gameState === "playing") toggleManualAero(); };
+
+// 판정 지점에서 앞차와 1초 이내 → 오버테이크 모드 사용 가능
+function onOverrideArmed(){
+    if(gameState === "playing") showMessage(IS_MOBILE ? "OVERTAKE 가능 · BOOST 버튼" : "OVERTAKE 가능 · SHIFT 로 부스트", 1.8);
+}
 Input.onRecover = () => {
     if(gameState === "playing" && race.state === "racing"){
         recoverCarToTrack();
@@ -270,7 +294,9 @@ function frame(time){
         if(gameState === "finished"){
             Input.throttle = false;
         }
+        if(typeof updateAICars === "function") updateAICars(dt, locked && race.state === "lights");
         updateCar(dt, locked);
+        if(typeof resolveCarContacts === "function") resolveCarContacts();
         updateCarVisuals(dt, physics.speed, physics.steering, physics.brakePressure > .1 || locked);
         updateCamera(dt);
         updateHUD();
@@ -280,6 +306,7 @@ function frame(time){
         }
     }else if(gameState === "menu"){
         updateAttractCamera(dt);
+        if(typeof updateAICars === "function") updateAICars(0, true);
     }
 
     if(gameState !== "paused"){
@@ -294,7 +321,7 @@ function frame(time){
 /* ---------------------------------------------------------
    INITIAL
 --------------------------------------------------------- */
-resetCar();
+setupGrid();
 hudEls.cameraMode.textContent = CAMERA_MODES[cameraMode];
 onResize();
 updateHUD();

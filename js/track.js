@@ -239,3 +239,46 @@ const trackCorners = trackBuild.corners.map(c => {
     const s = ((c.sStart - startS) / trackBuild.length + 1) % 1;
     return {...c, index: Math.round(s * SAMPLE_COUNT) % SAMPLE_COUNT};
 });
+
+/* ---------------------------------------------------------
+   ACTIVE AERO ZONES (2026: 직선 구간에서만 X 모드 허용)
+   곡률이 작은 300m 이상 직선을 찾아 진입 30m 후 ~ 끝 60m 전까지 지정.
+   각 구간 시작점은 오버테이크 모드 판정 지점(detection point)으로 쓴다.
+--------------------------------------------------------- */
+const aeroZoneMask = new Uint8Array(SAMPLE_COUNT);
+const aeroZones = [];
+{
+    const straight = i => Math.abs(trackSamples[i].k) < 1 / 900;
+    let c0 = 0;
+    while(c0 < SAMPLE_COUNT && straight(c0)) c0++;
+    let runStart = -1;
+    for(let o = 1; o <= SAMPLE_COUNT; o++){
+        const i = (c0 + o) % SAMPLE_COUNT;
+        if(straight(i)){
+            if(runStart < 0) runStart = c0 + o;
+        }else if(runStart >= 0){
+            const runEnd = c0 + o - 1;
+            if((runEnd - runStart) * SAMPLE_SPACING >= 300){
+                const zs = runStart + Math.round(30 / SAMPLE_SPACING);
+                const ze = runEnd - Math.round(60 / SAMPLE_SPACING);
+                aeroZones.push({start: zs % SAMPLE_COUNT, length: ze - zs});
+                for(let j = zs; j <= ze; j++) aeroZoneMask[j % SAMPLE_COUNT] = 1;
+            }
+            runStart = -1;
+        }
+    }
+}
+
+/* ---------------------------------------------------------
+   GRAVEL TRAPS — 저속 코너(반경 45m 이하) 바깥쪽
+   gravelMask[side][i] : side 0 = 오른쪽, 1 = 왼쪽
+--------------------------------------------------------- */
+const gravelMask = [new Uint8Array(SAMPLE_COUNT), new Uint8Array(SAMPLE_COUNT)];
+for(const c of trackCorners){
+    if(c.radius > 45 || Math.abs(c.angle) < 45) continue;
+    const side = c.angle > 0 ? 0 : 1;          // 좌코너의 바깥 = 오른쪽
+    const arc = Math.abs(c.angle) * Math.PI / 180 * c.radius;
+    const from = c.index - Math.round(5 / SAMPLE_SPACING);
+    const to = c.index + Math.round((arc + 70) / SAMPLE_SPACING);
+    for(let i = from; i <= to; i++) gravelMask[side][((i % SAMPLE_COUNT) + SAMPLE_COUNT) % SAMPLE_COUNT] = 1;
+}

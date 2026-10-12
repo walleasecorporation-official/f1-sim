@@ -305,13 +305,13 @@ function suitGloveMaterial(){
 /* ---------------------------------------------------------
    WHEELS — 둥근 숄더 타이어 + 회전이 보이는 사이드월 텍스처
 --------------------------------------------------------- */
-const sidewallTexture = makeCanvasTexture(256, 256, (ctx, w, h) => {
+function drawSidewall(ctx, w, h, compoundColor){
     const c = w / 2;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = "#141414";
     ctx.beginPath(); ctx.arc(c, c, c, 0, Math.PI * 2); ctx.fill();
-    // 컴파운드 컬러 링 (미디엄 = 노랑) — 두 군데 끊어 회전이 보이게
-    ctx.strokeStyle = "#f2c200";
+    // 컴파운드 컬러 링 (소프트 빨강 / 미디엄 노랑 / 하드 흰색) — 두 군데 끊어 회전이 보이게
+    ctx.strokeStyle = compoundColor;
     ctx.lineWidth = 7;
     for(const start of [0, Math.PI]){
         ctx.beginPath(); ctx.arc(c, c, c * .84, start + .25, start + Math.PI - .25); ctx.stroke();
@@ -338,7 +338,18 @@ const sidewallTexture = makeCanvasTexture(256, 256, (ctx, w, h) => {
     ctx.beginPath(); ctx.arc(c, c, c * .13, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#111";
     ctx.beginPath(); ctx.arc(c, c, c * .06, 0, Math.PI * 2); ctx.fill();
-}, {wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping});
+}
+
+const sidewallTexture = makeCanvasTexture(256, 256, (ctx, w, h) => drawSidewall(ctx, w, h, "#f2c200"),
+    {wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping});
+
+/** 선택한 컴파운드 색으로 사이드월 링을 다시 그린다 */
+function setTyreCompoundVisual(name){
+    const c = TYRE_COMPOUNDS[name] || TYRE_COMPOUNDS.medium;
+    const canvas = sidewallTexture.image;
+    drawSidewall(canvas.getContext("2d"), canvas.width, canvas.height, c.color);
+    sidewallTexture.needsUpdate = true;
+}
 const sidewallMaterial = new THREE.MeshStandardMaterial({map: sidewallTexture, roughness: .7, metalness: .1, transparent: false, alphaTest: .5});
 
 const wheels = [];
@@ -404,12 +415,13 @@ createWheel(1, (CAR_SPEC.width / 2 - CAR_SPEC.rearTireWidth / 2), CAR_SPEC.rearA
 /* ---------------------------------------------------------
    DRAW CALL 최적화: 정적 차체를 재질별로 병합
 --------------------------------------------------------- */
+let carBody;
 {
     const animated = new Set([frontFlaps, rearFlap]);
-    const merged = mergeGroupByMaterial(bodyParts, obj => animated.has(obj));
+    carBody = mergeGroupByMaterial(bodyParts, obj => animated.has(obj));
     car.remove(bodyParts);
-    car.add(merged);
-    for(const g of animated) merged.add(g);
+    car.add(carBody);
+    for(const g of animated) carBody.add(g);
 }
 
 car.traverse(obj => {
@@ -424,6 +436,46 @@ function updateCarVisuals(dt, speed, steering, braking){
         w.spin.rotation.x -= (speed / w.radius) * dt;
         if(w.isFront) w.steer.rotation.y = steering;
     }
+    // 하중 이동(피치/롤)과 다운포스에 의한 차고 변화 — 바퀴는 지면에 남는다
+    carBody.rotation.x = physics.pitch;
+    carBody.rotation.z = physics.roll;
+    carBody.position.y = -physics.heave;
+    // 액티브 에어로: X 모드에서 앞뒤 플랩이 눕는다
+    frontFlaps.rotation.x = physics.aeroBlend * .22;
+    rearFlap.rotation.x = physics.aeroBlend * .42;
     steeringWheel.rotation.z = -steering * 2.4;
     rainLightMaterial.color.setHex(braking ? 0xff2020 : 0x550000);
+}
+
+/* ---------------------------------------------------------
+   AI 차량용 저사양 모델
+   플레이어 차량을 복제한 뒤 페인트/헬멧 색만 바꾸고 전체를 재질별로 병합한다.
+   (바퀴 회전 없음, 차량당 draw call 약 10개)
+--------------------------------------------------------- */
+function createAICarMesh(paintHex, helmetHex){
+    const clone = car.clone(true);
+    clone.position.set(0, 0, 0);
+    clone.rotation.set(0, 0, 0);
+    const paint = paintMaterial.clone();
+    paint.color.setHex(paintHex);
+    const helmet = helmetMaterial.clone();
+    helmet.color.setHex(helmetHex);
+    const rainLight = rainLightMaterial.clone();
+    const drop = [];
+    clone.traverse(o => {
+        if(!o.isMesh) return;
+        if(o.material === paintMaterial) o.material = paint;
+        else if(o.material === helmetMaterial) o.material = helmet;
+        else if(o.material === rainLightMaterial) o.material = rainLight;
+        else if(o.material === suitGloveMaterial() || o.material.isMeshBasicMaterial && o.material !== rainLightMaterial && !o.material.transparent) drop.push(o);
+    });
+    for(const o of drop) o.parent.remove(o);
+    clone.updateMatrixWorld(true);
+    const merged = mergeGroupByMaterial(clone, o => !!(o.material && o.material.transparent));
+    merged.traverse(o => {
+        if(o.isMesh) o.castShadow = QUALITY.shadows && !o.material.transparent;
+    });
+    merged.userData.rainLight = rainLight;
+    scene.add(merged);
+    return merged;
 }

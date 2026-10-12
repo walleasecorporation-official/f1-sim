@@ -4,7 +4,7 @@
 ========================================================= */
 "use strict";
 
-const TOTAL_LAPS = 3;
+// 총 랩 수는 시작 화면 설정(raceSettings.laps)을 따른다.
 
 const hudEls = {
     lap: document.getElementById("lap"),
@@ -22,7 +22,7 @@ const hudEls = {
     fps: document.getElementById("fps"),
     tiltBar: document.getElementById("tiltIndicator")
 };
-hudEls.lapTotal.textContent = TOTAL_LAPS;
+hudEls.lapTotal.textContent = raceSettings.laps;
 
 const hudCache = {};
 function setText(key, el, value){
@@ -107,6 +107,7 @@ function updateRace(dt){
 
     // 결승선(인덱스 0) 통과
     const crossed = race.lastIndex > n * .9 && i < n * .1;
+    if(crossed) physicsOnNewLap();
     if(crossed && race.checkpoints === 3){
         const lapTime = race.time - race.lapStart;
         race.lastLap = lapTime;
@@ -114,12 +115,12 @@ function updateRace(dt){
         if(isBest) race.bestLap = lapTime;
         race.lapStart = race.time;
         race.checkpoints = 0;
-        if(race.lap >= TOTAL_LAPS){
+        if(race.lap >= raceSettings.laps){
             race.state = "finished";
             onRaceFinished && onRaceFinished();
         }else{
             race.lap++;
-            showMessage((race.lap === TOTAL_LAPS ? "FINAL LAP" : "LAP " + race.lap) + (isBest ? "  ·  BEST " + formatTime(lapTime) : ""));
+            showMessage((race.lap === raceSettings.laps ? "FINAL LAP" : "LAP " + race.lap) + (isBest ? "  ·  BEST " + formatTime(lapTime) : ""));
         }
     }
     race.lastIndex = i;
@@ -155,7 +156,7 @@ function updateHUD(){
         hudEls.rpmLeds.forEach((el, i) => el.classList.toggle("on", i < leds));
     }
 
-    setText("lap", hudEls.lap, String(Math.min(race.lap, TOTAL_LAPS)));
+    setText("lap", hudEls.lap, String(Math.min(race.lap, raceSettings.laps)));
     setText("lapTime", hudEls.lapTime, race.state === "racing" ? formatTime(race.time - race.lapStart) : race.state === "finished" ? formatTime(race.lastLap) : "0:00.000");
     setText("lastLap", hudEls.lastLap, formatTime(race.lastLap));
     setText("bestLap", hudEls.bestLap, formatTime(race.bestLap));
