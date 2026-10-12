@@ -35,7 +35,7 @@ const QUALITY_PRESETS = {
         crowd: false
     },
     medium: {
-        maxPixelRatio: 1.5,
+        maxPixelRatio: 1.25,
         minPixelRatio: 0.7,
         antialias: false,
         shadows: false,
@@ -46,7 +46,7 @@ const QUALITY_PRESETS = {
         anisotropy: 4,
         clouds: true,
         physicalPaint: false,
-        catchFence: true,
+        catchFence: false,
         crowd: true
     },
     high: {
@@ -66,9 +66,16 @@ const QUALITY_PRESETS = {
     }
 };
 
+const QUALITY_STORAGE_KEY = "f1sim.quality";
+
+// 우선순위: URL ?quality= → 저장된 선택 → 기기 기본값
 const QUALITY_NAME = (() => {
     const q = URL_PARAMS.get("quality");
     if(q && QUALITY_PRESETS[q]) return q;
+    try{
+        const saved = localStorage.getItem(QUALITY_STORAGE_KEY);
+        if(saved && QUALITY_PRESETS[saved]) return saved;
+    }catch(_){}
     return IS_MOBILE ? "medium" : "high";
 })();
 

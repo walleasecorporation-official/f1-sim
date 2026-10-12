@@ -32,32 +32,33 @@ const VEHICLE = {
     cgToRear: 1.53,
     cgHeight: .29,
     trackWidth: 1.6,
-    yawInertiaPerKg: 1.45,     // Iz ≈ 1150 kg·m²
+    yawInertiaPerKg: 1.45,     // Iz ≈ 1120~1140 kg·m² (연료량에 따라)
     tireRadius: CAR_SPEC.tireRadius,
 
-    mu: 1.72,                  // 드라이 슬릭 피크 마찰계수
+    mu: 1.82,                  // 드라이 슬릭 피크 마찰계수 (적정 온도 기준)
     loadSensitivity: .10,      // 하중이 커질수록 μ 가 약간 감소
     refLoad: 4000,             // N / 타이어
     pacejkaB: 18,              // 앞: 피크 슬립각 ≈ 0.10 rad (≈ 6°)
     pacejkaBRear: 16.5,        // 뒤: 피크가 조금 늦어 한계에서 점진적으로 미끄러짐
     pacejkaC: 1.45,            // 피크 이후 미끄럼 마찰 ≈ 75% 유지
-    rearGripBias: 1.18,        // 리어 타이어 폭(405→375mm)이 프론트보다 넓어 그립↑ → 한계에서 언더스티어(안정)
+    rearGripBias: 1.24,        // 리어 타이어 폭(405→375mm)이 프론트보다 넓어 그립↑ → 한계에서 언더스티어(안정)
     slideFactor: .82,          // 락업/휠스핀 시 미끄럼 마찰 비율
 
     brakeMaxForce: 52000,
     brakeBias: .57,
+    digitalBrakeLimit: .88,    // ABS 끔: 버튼(디지털) 브레이크는 직선 제동 한계의 88% 까지만 밟는다
     drivetrainEfficiency: .94,
     rollingCoef: .012,
 
     fuelLHV: 43e6,             // J/kg
-    iceEfficiency: .47,        // 2026 ICE 열효율 (지속가능 연료)
+    iceEfficiency: .485,       // 2026 ICE 열효율 — 최대 연료 흐름이 2026 에너지 흐름 한도(3000 MJ/h)에 맞도록
     fuelPerLapEstimate: 1.5    // kg — 시작 연료 계산용 (+ 여유분)
 };
 
 // 액티브 에어로 두 모드 (2025 대비 다운포스 ~30%↓, X 모드 항력 대폭↓)
 const AERO_MODES = {
     Z: {CdA: 1.05, ClA: 3.2, balance: .40},
-    X: {CdA: .68,  ClA: 1.75, balance: .36}
+    X: {CdA: .55,  ClA: 1.75, balance: .36}
 };
 const AERO_SWITCH_TIME = .35;  // 플랩 전환 시간 (s)
 
@@ -67,24 +68,26 @@ const POWER_UNIT = {
     harvestPerLap: 8.5e6,      // 랩당 회수 한도 (J)
     overrideExtra: .5e6,       // 오버테이크 모드 추가 회수 (J)
     liftHarvestKW: 150,        // 가속 페달을 뗐을 때 회수 출력
+    deployMinJ: 5e3,           // 이 아래면 배터리가 빈 것으로 본다
+    deployTaperJ: 2.5e6,       // SOC 배치 맵: 이 아래에서 MGU-K 출력을 줄여 랩 중간에 바닥나지 않게
+    deployMinScale: .1,
     idleRPM: 4000,
     maxRPM: 15000,
-    upshiftRPM: 12300,
+    upshiftRPM: 13000,
     downshiftRPM: 9300,
     launchRPM: 8500,
     torqueScale: .565          // 기존 토크 곡선을 ICE ≈400 kW 로 축소
 };
 
 const TYRE_COMPOUNDS = {
-    soft:   {label: "SOFT",   color: "#e3262b", mu: 1.04,  optimum: 95,  window: 26, wear: 1.8},
-    medium: {label: "MEDIUM", color: "#f2c200", mu: 1.0,   optimum: 100, window: 28, wear: 1.0},
-    hard:   {label: "HARD",   color: "#f0f0f0", mu: .965,  optimum: 106, window: 30, wear: .6}
+    // heatCap: 열용량(J/K) — 작을수록 빨리 데워짐,  heatShare: 슬립 일률 중 타이어 발열 비율
+    soft:   {label: "SOFT",   color: "#e3262b", mu: 1.04,  optimum: 95,  window: 26, wear: 1.8, heatCap: 700, heatShare: .175},
+    medium: {label: "MEDIUM", color: "#f2c200", mu: 1.0,   optimum: 100, window: 28, wear: 1.0, heatCap: 800, heatShare: .16},
+    hard:   {label: "HARD",   color: "#f0f0f0", mu: .965,  optimum: 106, window: 30, wear: .6,  heatCap: 950, heatShare: .145}
 };
 const TYRE_AMBIENT = 28;
 const TYRE_BLANKET = 70;       // 2026 타이어 블랭킷 온도
-const TYRE_HEAT_CAPACITY = 1200;   // J/K (표면+카커스 등가)
-const TYRE_HEAT_SHARE = .13;       // 슬립 일률 중 타이어로 가는 비율
-const TYRE_WEAR_PER_J = 4.2e-8;
+const TYRE_WEAR_PER_J = 5.5e-8;
 
 const SURFACES = {
     asphalt: {mu: 1.0,  rolling: 1,   aero: 1,  label: "DRY ASPHALT"},
@@ -176,6 +179,8 @@ const physics = {
     heave: 0,                  // 압축량 (m, + = 내려감)
     heaveVel: 0,
     rideHeight: .045,
+    floorStall: 0,             // 0..1 플로어 실속 정도
+    odo: 0,                    // 주행 거리 (m)
     pitch: 0,
     roll: 0,
     porpoise: 0,               // 최근 진동 크기 (시각/HUD)
@@ -188,7 +193,10 @@ const physics = {
 const RIDE_HEIGHT_STATIC = .045;
 const HEAVE_STIFFNESS = 650000;    // N/m
 const HEAVE_DAMPING_RATIO = .16;
-const FLOOR_STALL_HEIGHT = .012;
+const FLOOR_STALL_HEIGHT = .020;      // 이보다 낮으면 플로어 실속
+const FLOOR_REATTACH_HEIGHT = .024;   // 이보다 높아져야 흐름이 다시 붙음 (히스테리시스)
+const FLOOR_STALL_TAU = .06;          // 실속/재부착 지연 (s)
+const FLOOR_STALL_LOSS = .28;         // 실속 시 다운포스 손실
 const GROUND_EFFECT_GAIN = .15;    // 2026: 부분 평면 플로어 → 그라운드 이펙트 축소
 
 // 단수별 토크 맵: 저단에서 ICE/MGU-K 전달량을 줄여 휠스핀을 완화
@@ -248,11 +256,14 @@ function axleGrip(axle){
             tyreGripFactor(physics.tyreTemp[i + 1], physics.tyreWear[i + 1], physics.flatSpot[axle])) * .5;
 }
 
+/** 하중 민감도: 타이어 하중이 클수록 μ 가 약간 감소 */
+function loadSens(Fz){
+    return Math.max(.75, Math.min(1.1, 1 - VEHICLE.loadSensitivity * (Fz / 2 / VEHICLE.refLoad - 1)));
+}
+
 /** 하중 민감도를 반영한 축 마찰계수 */
 function axleMu(Fz, axle){
-    const perTyre = Fz / 2;
-    const sens = 1 - VEHICLE.loadSensitivity * (perTyre / VEHICLE.refLoad - 1);
-    return VEHICLE.mu * Math.max(.75, Math.min(1.1, sens)) * physics.surfaceMu * axleGrip(axle) * (axle === 1 ? VEHICLE.rearGripBias : 1);
+    return VEHICLE.mu * loadSens(Fz) * physics.surfaceMu * axleGrip(axle) * (axle === 1 ? VEHICLE.rearGripBias : 1);
 }
 
 /* =========================================================
@@ -290,7 +301,8 @@ function updateAeroMode(dt, throttle, brake){
     let wantX = physics.inAeroZone && !brake && physics.u > 25 && physics.surface !== "grass" && physics.surface !== "gravel";
     if(!raceSettings.aeroAuto) wantX = wantX && physics.aeroManualX;
     // 조향을 크게 하면 코너 모드로 복귀
-    if(Math.abs(physics.steering) > .06) wantX = false;
+    // 조향(속도별 최대 조향각의 절반 이상)이나 1 g 이상의 횡가속이면 코너 모드
+    if(Math.abs(physics.steering) > .5 * (physics.deltaMax || .3) || Math.abs(Input.steer) > .3 || Math.abs(physics.ay) > G) wantX = false;
     if(!physics.inAeroZone || brake) physics.aeroManualX = false;
 
     physics.aeroMode = wantX ? "X" : "Z";
@@ -321,8 +333,11 @@ const SLIPSTREAM_DRAG_CUT = .12;   // 바로 뒤(정렬)일 때 최대 항력 �
 const DIRTY_AIR_DF_LOSS = .10;     // 바로 뒤일 때 최대 다운포스 손실 (2026 규정은 후류 영향 축소 목표)
 
 function wakeConsider(myProgress, myLateral, p, lat){
-    const d = (p - myProgress) * SAMPLE_SPACING;
-    if(d <= 0) return;
+    // 랩이 다른 차(랩 다운 차량 포함)도 트랙 위 물리적 거리로 계산
+    let dp = (p - myProgress) % SAMPLE_COUNT;
+    if(dp < 0) dp += SAMPLE_COUNT;
+    if(dp <= 0 || dp > SAMPLE_COUNT / 2) return;
+    const d = dp * SAMPLE_SPACING;
     if(d < wakeResult.gapAhead) wakeResult.gapAhead = d;
     if(d > 80) return;
     const latDiff = Math.abs(lat - myLateral);
@@ -369,7 +384,8 @@ function updateOverride(dt, throttle){
             }
         }
     }
-    physics.overrideActive = physics.overrideArmed && Input.boost && throttle && physics.ersEnergy > 0;
+    // 오버테이크 모드는 직선(에어로 구간)에서만 추가 출력 — 코너에서 버튼을 누르고 있어도 배터리를 낭비하지 않는다
+    physics.overrideActive = physics.overrideArmed && Input.boost && throttle && physics.inAeroZone && physics.ersEnergy > POWER_UNIT.deployMinJ;
 }
 
 /* =========================================================
@@ -428,9 +444,11 @@ function computeDriveDemand(throttle){
     physics.iceKW = torque * rpm * Math.PI / 30 / 1000 * fuelScale;
 
     let ersForce = 0;
-    if(physics.ersEnergy > 0){
+    if(physics.ersEnergy > POWER_UNIT.deployMinJ){
         const kmh = absU * 3.6;
-        const limit = mgukPowerLimitKW(kmh, physics.overrideActive);
+        // SOC 배치 맵: 배터리가 deployTaperJ 아래로 내려가면 MGU-K 출력을 줄인다 (오버테이크 중에는 전력)
+        const socScale = physics.overrideActive ? 1 : Math.max(POWER_UNIT.deployMinScale, Math.min(1, physics.ersEnergy / POWER_UNIT.deployTaperJ));
+        const limit = mgukPowerLimitKW(kmh, physics.overrideActive) * socScale;
         // 저속에서는 MGU-K 토크 한계로 제한
         ersForce = Math.min(9000, limit * 1000 / Math.max(absU, 6)) * gearMap.ers;
         // 실제 기계 출력 (배터리 소모 계산용)
@@ -480,9 +498,18 @@ function updateCar(dt, controlsLocked){
     // 페달 → 제동 압력 (램프)
     const forwardBraking = brakeInput && u0 > .08 && !physics.reverse;
     const reverseBraking = throttle && u0 < -.08;
-    const brakeTarget = (forwardBraking || reverseBraking) ? 1 : 0;
+    let brakeTarget = (forwardBraking || reverseBraking) ? 1 : 0;
+    // ABS 끔(프로): 디지털 브레이크 버튼은 "따뜻한 타이어 기준 직선 제동 한계"의 88% 까지만 밟는다.
+    // 차가운/마모된 타이어, 연석, 조향 중 제동에서는 여전히 잠긴다.
+    if(forwardBraking && !assists.abs && tmpForces.Fzf){
+        const cmu = VEHICLE.mu * TYRE_COMPOUNDS[physics.compound].mu;
+        const pf = cmu * loadSens(tmpForces.Fzf) * tmpForces.Fzf / (VEHICLE.brakeMaxForce * VEHICLE.brakeBias);
+        const pr = cmu * VEHICLE.rearGripBias * loadSens(tmpForces.Fzr) * tmpForces.Fzr / (VEHICLE.brakeMaxForce * (1 - VEHICLE.brakeBias));
+        brakeTarget = Math.min(1, VEHICLE.digitalBrakeLimit * Math.min(pf, pr));
+    }
     const rate = brakeTarget > physics.brakePressure ? 8.5 : 11.0;
     physics.brakePressure += (brakeTarget - physics.brakePressure) * Math.min(1, rate * dt);
+    if(physics.brakePressure < 1e-3 && brakeTarget === 0) physics.brakePressure = 0;
 
     const driving = !forwardBraking && !reverseBraking && !controlsLocked && (throttle || (physics.reverse && brakeInput));
     // 가속 페달 램프: 디지털 입력(키보드/버튼)도 0→100% 를 약 0.3초에 걸쳐 밟는다
@@ -592,9 +619,8 @@ function integrateDynamics(h, driveDemand, assists, throttle){
     // 앞축: 제동만
     if(assists.abs && Fbf > longCapF && absU > 1){
         Fbf = longCapF; physics.absActive = true;
-    }else if(Fbf > FmaxF * .98 && absU > 1){
-        if(assists.abs){ Fbf = FmaxF * .97; physics.absActive = true; }
-        else{ Fbf = FmaxF * V.slideFactor; latScaleF = .18; physics.lockFront = true; }
+    }else if(!assists.abs && Fbf > FmaxF * .98 && absU > 1){
+        Fbf = FmaxF * V.slideFactor; latScaleF = .18; physics.lockFront = true;
     }
     FxF = -dir * Fbf;
 
@@ -675,7 +701,8 @@ function integrateDynamics(h, driveDemand, assists, throttle){
     r += dr * h;
 
     // 제동/저항으로 방향이 뒤집히지 않도록
-    if(prevU !== 0 && Math.sign(u) !== Math.sign(prevU) && !(driveDemand !== 0 && Math.sign(driveDemand) === Math.sign(u))){
+    // (prevU 가 정확히 0 일 때도 검사: 정지 상태에서 브레이크가 차를 뒤로 미는 것을 막는다)
+    if(Math.sign(u) !== Math.sign(prevU) && !(driveDemand !== 0 && Math.sign(driveDemand) === Math.sign(u))){
         u = 0;
     }
     if(Math.abs(u) < .02 && driveDemand === 0) u = 0;
@@ -725,14 +752,14 @@ function integrateDynamics(h, driveDemand, assists, throttle){
 /* =========================================================
    GROUND EFFECT / SUSPENSION (포퍼싱)
 ========================================================= */
+/**
+ * 차고가 낮을수록 다운포스↑ (그라운드 이펙트). 너무 낮으면 플로어 흐름이 실속(physics.floorStall)해
+ * 다운포스가 줄고 → 차가 떠오르고 → 다시 붙는 지연·히스테리시스 루프가 포퍼싱을 만든다.
+ */
 function groundEffectFactor(ride){
     const h0 = RIDE_HEIGHT_STATIC;
-    if(ride >= FLOOR_STALL_HEIGHT){
-        return 1 + GROUND_EFFECT_GAIN * (1 - Math.min(ride, h0 * 1.5) / h0);
-    }
-    // 플로어 실속: 다운포스 급감
-    const peak = 1 + GROUND_EFFECT_GAIN * (1 - FLOOR_STALL_HEIGHT / h0);
-    return peak * (.72 + .28 * Math.max(0, ride) / FLOOR_STALL_HEIGHT);
+    const r = Math.max(ride, FLOOR_STALL_HEIGHT);
+    return (1 + GROUND_EFFECT_GAIN * (1 - Math.min(r, h0 * 1.5) / h0)) * (1 - FLOOR_STALL_LOSS * physics.floorStall);
 }
 
 let porpoiseTrack = 0;
@@ -740,8 +767,9 @@ function updateSuspension(dt){
     const m = physics.mass;
     const k = HEAVE_STIFFNESS;
     const c = HEAVE_DAMPING_RATIO * 2 * Math.sqrt(k * m);
-    // 노면 요철 + 연석 충격
-    const s = physics.progress * SAMPLE_SPACING;
+    // 노면 요철 + 연석 충격 (주행 거리 기준 — 샘플 간격에 따른 앨리어싱 방지)
+    physics.odo += Math.abs(physics.u) * dt;
+    const s = physics.odo;
     const speedF = Math.min(1, Math.abs(physics.u) / 60);
     let bump = Math.sin(s * .9) * Math.sin(s * .23) * 900 * speedF;
     if(physics.onKerb) bump += Math.sin(s * 6.3) * 5200 * Math.min(1, Math.abs(physics.u) / 25);
@@ -750,6 +778,8 @@ function updateSuspension(dt){
     const sub = 4, hh = dt / sub;
     for(let i = 0; i < sub; i++){
         const ride = RIDE_HEIGHT_STATIC - physics.heave;
+        const want = ride < FLOOR_STALL_HEIGHT ? 1 : ride > FLOOR_REATTACH_HEIGHT ? 0 : (physics.floorStall > .5 ? 1 : 0);
+        physics.floorStall += (want - physics.floorStall) * Math.min(1, hh / FLOOR_STALL_TAU);
         const qd = .5 * 1.2 * physics.u * physics.u;
         const ClA = AERO_MODES.Z.ClA + (AERO_MODES.X.ClA - AERO_MODES.Z.ClA) * physics.aeroBlend;
         const df = qd * ClA * groundEffectFactor(ride) * (1 - DIRTY_AIR_DF_LOSS * physics.dirtyAir);
@@ -782,17 +812,17 @@ function updateTyres(dt){
     const compound = TYRE_COMPOUNDS[physics.compound];
 
     // 축별 슬립 일률 (횡슬립 + 종슬립)
-    let pf = Math.abs(f.Fyf) * Math.abs(Math.sin(f.alphaF)) * absU + Math.abs(f.Fxf) * absU * .012;
+    let pf = Math.abs(f.Fyf) * Math.abs(Math.sin(f.alphaF)) * absU + Math.abs(f.Fxf) * absU * .03;
     let pr = Math.abs(f.Fyr) * Math.abs(Math.sin(f.alphaR)) * absU + Math.abs(f.Fxr) * absU * .009;
-    if(physics.lockFront) pf += Math.abs(f.Fxf) * absU * .5;
-    if(physics.lockRear) pr += Math.abs(f.Fxr) * absU * .5;
+    if(physics.lockFront) pf += Math.abs(f.Fxf) * absU * .06;
+    if(physics.lockRear) pr += Math.abs(f.Fxr) * absU * .06;
     if(physics.wheelspin) pr += Math.abs(f.Fxr) * 2.5;   // 슬립 속도 ≈ 2.5 m/s
     if(physics.surface === "grass" || physics.surface === "gravel"){ pf *= .4; pr *= .4; }
 
     // 좌우 하중 배분 (횡하중 이동)
     // 횡하중 이동량 = m·ay·h / track, 전체 수직하중(무게+다운포스) 대비 비율
     const totalFz = Math.max(1, (f.Fzf || 0) + (f.Fzr || 0));
-    const latShare = Math.max(-.4, Math.min(.4, physics.mass * physics.ay * VEHICLE.cgHeight / (VEHICLE.trackWidth * totalFz)));
+    const latShare = Math.max(-.4, Math.min(.4, .45 * physics.mass * physics.ay * VEHICLE.cgHeight / (VEHICLE.trackWidth * totalFz)));
     // 좌회전(ay>0)이면 오른쪽(바깥) 타이어 하중 증가
     const shareL = .5 - latShare, shareR = .5 + latShare;
     const shares = [shareL, shareR, shareL, shareR];
@@ -800,15 +830,15 @@ function updateTyres(dt){
 
     const cooling = 4 + .09 * absU;   // W/K
     for(let i = 0; i < 4; i++){
-        const heat = power[i] * shares[i] * TYRE_HEAT_SHARE;
+        const heat = power[i] * shares[i] * compound.heatShare;
         const T = physics.tyreTemp[i];
-        physics.tyreTemp[i] = Math.max(TYRE_AMBIENT, Math.min(160, T + (heat - cooling * (T - TYRE_AMBIENT)) / TYRE_HEAT_CAPACITY * dt));
+        physics.tyreTemp[i] = Math.max(TYRE_AMBIENT, Math.min(160, T + (heat - cooling * (T - TYRE_AMBIENT)) / compound.heatCap * dt));
         // 과열 시 마모 가속
         const over = Math.max(0, T - compound.optimum - 12) / 20;
         physics.tyreWear[i] = Math.min(1, physics.tyreWear[i] + power[i] * shares[i] * TYRE_WEAR_PER_J * compound.wear * (1 + over) * dt);
     }
-    if(physics.lockFront && absU > 10) physics.flatSpot[0] = Math.min(1, physics.flatSpot[0] + dt * .6);
-    if(physics.lockRear && absU > 10) physics.flatSpot[1] = Math.min(1, physics.flatSpot[1] + dt * .6);
+    if(physics.lockFront && absU > 10) physics.flatSpot[0] = Math.min(1, physics.flatSpot[0] + dt * .15);
+    if(physics.lockRear && absU > 10) physics.flatSpot[1] = Math.min(1, physics.flatSpot[1] + dt * .15);
 }
 
 /* =========================================================
@@ -910,6 +940,7 @@ function resetDynamics(){
     physics.reverse = false;
     physics.wallHit = 0;
     physics.heave = physics.heaveVel = 0;
+    physics.floorStall = 0;
     physics.pitch = physics.roll = 0;
     physics.slipstream = physics.dirtyAir = 0;
 }

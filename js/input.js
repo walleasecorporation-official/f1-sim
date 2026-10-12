@@ -36,8 +36,17 @@ function updateKeyboardAxes(){
 
 let keyboardUsed = !IS_MOBILE;
 
+/** 레이스 화면인지 (메뉴의 버튼/선택 상자를 키보드로 조작할 때는 기본 동작을 막지 않는다) */
+function inRaceView(){
+    return typeof gameState !== "undefined" && (gameState === "playing" || gameState === "starting" || gameState === "finished");
+}
+
 window.addEventListener("keydown", e => {
-    if(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
+    if(inRaceView()){
+        if(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
+        // 숨겨진 RACE START/RACE AGAIN 버튼에 포커스가 남아 Enter 로 레이스가 재시작되지 않도록
+        if(e.code === "Enter" || e.code === "NumpadEnter") e.preventDefault();
+    }
     if(e.repeat){ return; }
     keyboardUsed = true;
     keyState[e.code] = true;
@@ -59,6 +68,10 @@ window.addEventListener("blur", () => {
     updateKeyboardAxes();
     Input.throttle = false;
     Input.brake = false;
+    Input.boost = false;
+    touchBoost = false;
+    // 누르고 있던 터치 버튼도 모두 놓은 상태로 되돌린다
+    for(const reset of holdButtonResets) reset();
     if(!Input.tiltActive) Input.steer = 0;
 });
 
@@ -69,9 +82,12 @@ window.addEventListener("blur", () => {
 const touchSteer = {left: false, right: false};
 let touchBoost = false;
 
+const holdButtonResets = [];
+
 function bindHoldButton(el, onChange){
     if(!el) return;
     const active = new Set();
+    holdButtonResets.push(() => { active.clear(); set(); });
     const set = () => {
         const on = active.size > 0;
         el.classList.toggle("pressed", on);

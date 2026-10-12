@@ -43,8 +43,7 @@ const AI_TRACTION_MU = VEHICLE.mu * VEHICLE.rearGripBias * .9;
 const AI_ICE_W = 360e3;                        // 휠 기준 ICE 출력 (≈400 kW × 구동 효율)
 const AI_DECEL_CAP = 5 * G;
 const AI_VMAX = 105;                           // 프로파일 상한 (m/s)
-const AI_TOW_DRAG = SLIPSTREAM_DRAG_CUT;        // 슬립스트림 항력 감소 (플레이어와 동일, 최고속 약 +4%)
-const AI_DIRTY_LOSS = .035;                    // 더티 에어 코너 속도 손실
+const AI_TOW_DRAG = SLIPSTREAM_DRAG_CUT;        // 슬립스트림 항력 감소 (플레이어와 동일)
 const AI_CIRCLE_OFFSET = 1.4;                  // 충돌 원: 차량 중심 앞뒤 ±1.4 m
 const AI_CIRCLE_RADIUS = .95;
 const AI_RESTITUTION = .3;
@@ -169,8 +168,8 @@ function aiBuildRacingLine(){
    코너 한계: v²κ = μ(g + ½ρ·ClA·v²/m)  →  v = √(μg / (κ − μ·½ρ·ClA/m))
    제동: μ(g + DF/m)·(마찰원 잔여) + 항력/m, 최대 5 g
 --------------------------------------------------------- */
-function aiLateralLimit(k, mu){
-    const den = k - mu * .6 * AERO_MODES.Z.ClA / AI_MASS;
+function aiLateralLimit(k, mu, claScale = 1){
+    const den = k - mu * .6 * AERO_MODES.Z.ClA * claScale / AI_MASS;
     if(den <= 1e-6) return AI_VMAX;
     return Math.min(AI_VMAX, Math.sqrt(mu * G / den));
 }
@@ -198,7 +197,7 @@ function aiAccel(v, ersW, cda, cla, tow, trac){
     const rolling = VEHICLE.rollingCoef * (AI_MASS * G + df * .3);
     const fIce = Math.min(AI_ICE_W / Math.max(v, 1), 9600);
     const fErs = Math.min(ersW / Math.max(v, 6), 9000);
-    const traction = AI_TRACTION_MU * trac * (.58 * AI_MASS * G + .6 * df);
+    const traction = AI_TRACTION_MU * trac * (VEHICLE.cgToFront / VEHICLE.wheelBase * AI_MASS * G + .6 * df);
     return (Math.min(fIce + fErs, traction) - drag - rolling) / AI_MASS;
 }
 
@@ -314,6 +313,12 @@ function aiSkillFor(k, count){
 /** 이 차량만 가진 GPU 자원(병합 지오메트리, 복제 재질)만 해제 — 플레이어와 공유하는 것은 유지 */
 function disposeAICarMesh(mesh){
     scene.remove(mesh);
+    // 공유 템플릿 지오메트리를 쓰는 경우: 이 차량 전용으로 복제한 재질만 해제
+    if(mesh.userData.sharedGeometry){
+        const own = mesh.userData.ownMaterials || [];
+        for(const mat of own) mat.dispose();
+        return;
+    }
     const shared = new Set();
     car.traverse(o => {
         if(!o.isMesh) return;
@@ -487,7 +492,8 @@ function aiChooseLane(ci, bi, blockD, offset, keepSide){
         const lane = Math.max(-AI_LANE_MAX, Math.min(AI_LANE_MAX, latB + side * sep));
         if(Math.abs(lane - latB) < aiBodyW[bi] + .25) continue;   // 도로 끝까지 붙어도 공간 부족
         // 가까운 앞차 뒤를 가로지르는 차선은 쓰지 않는다 (지금 위치/도달 시 위치 모두 반대쪽일 때)
-        if(mySide !== 0 && side !== mySide && side !== physSide && side !== keepSide && blockD < 30) continue;
+        // (내가 거의 멈춰 있으면 예외 — 멈춘 플레이어 뒤에서 영원히 서 있지 않도록)
+        if(mySide !== 0 && side !== mySide && side !== physSide && side !== keepSide && blockD < 30 && aiBodyU[ci] > 6) continue;
         let free = true;
         for(let j = 0; j < aiBodyCount; j++){
             if(j === ci || j === bi || !aiBodyOn[j]) continue;
@@ -570,7 +576,12 @@ function driveAICar(c, ci, dt){
     const kLook = aiArrayAt(aiLineK, myP + (8 + u * .6) / SAMPLE_SPACING);
     const corner = Math.min(1, kLook * 80);
     target *= 1 + (c.paceLap - 1) * corner;
-    target *= 1 - AI_DIRTY_LOSS * c.dirty * corner;
+    // 더티 에어: 플레이어와 같은 다운포스 손실(DIRTY_AIR_DF_LOSS)을 코너 한계 속도에 반영 — 고속 코너일수록 손해가 크다
+    if(c.dirty > .01 && kLook > 1e-4){
+        const muS = AI_MU * aiGripFactor(c.skill);
+        const v0 = aiLateralLimit(kLook, muS);
+        if(v0 < AI_VMAX) target *= aiLateralLimit(kLook, muS, 1 - DIRTY_AIR_DF_LOSS * c.dirty) / v0;
+    }
     // 레이싱 라인을 벗어나 있으면 코너에서 조금 느리게
     target *= 1 - Math.min(.15, Math.abs(c.lateral - lineHere) * kLook * .6);
     if(c.finished) target = Math.min(target * .82, AI_COOL_SPEED);
@@ -672,8 +683,10 @@ function driveAICar(c, ci, dt){
     let a;
     let harvestW = 0;
     if(u < target - .02){
-        c.overrideActive = c.overrideArmed && c.ers > 0;
-        const ersW = c.ers > 0 ? mgukPowerLimitKW(u * 3.6, c.overrideActive) * 1000 : 0;
+        // 플레이어와 같은 규칙: 오버테이크는 직선(에어로 구간)에서만, SOC 배치 맵으로 배터리 관리
+        c.overrideActive = c.overrideArmed && aeroZoneMask[c.trackIndex] === 1 && c.ers > POWER_UNIT.deployMinJ;
+        const socScale = c.overrideActive ? 1 : Math.max(POWER_UNIT.deployMinScale, Math.min(1, c.ers / POWER_UNIT.deployTaperJ));
+        const ersW = c.ers > POWER_UNIT.deployMinJ ? mgukPowerLimitKW(u * 3.6, c.overrideActive) * 1000 * socScale : 0;
         const aMax = aiAccel(u, ersW, cda, cla, c.tow, c.tractionF);
         a = Math.min(aMax, (target - u) / dt);
         // MGU-K 사용량: 실제 필요한 구동력 비율만큼 (모터 효율 95%)
@@ -769,7 +782,8 @@ function driveAICar(c, ci, dt){
 function aiLapBookkeeping(c, oldP, dt){
     const N = SAMPLE_COUNT;
     const k = Math.floor(c.progress / N);
-    if(k <= Math.floor(oldP / N) || k < 0) return;
+    // 접촉으로 결승선 뒤로 밀렸다가 다시 넘는 경우 같은 랩을 두 번 세지 않는다
+    if(k <= Math.floor(oldP / N) || k < 0 || (k >= 1 && k <= c.lapsDone)) return;
     // 결승선(랩 시작) 통과: 랩당 ERS 회수 한도 초기화
     c.harvested = 0;
     if(k < 1) return;
@@ -840,8 +854,16 @@ function renderAICar(c){
     m.position.set(c.x, 0, c.z);
     m.rotation.y = c.yaw;
     const dx = c.x - camera.position.x, dz = c.z - camera.position.z;
-    const r = QUALITY_NAME === "low" ? 350 : 600;
-    m.visible = dx * dx + dz * dz < r * r;
+    const d2 = dx * dx + dz * dz;
+    const r = QUALITY_NAME === "low" ? 300 : 450;
+    m.visible = d2 < r * r;
+    // LOD: 70 m 밖에서는 작은 부품(헬멧, 휠 디스크, 라이트 등)을 숨겨 draw call 을 줄인다
+    const near = d2 < 4900;
+    const detail = m.userData.detail;
+    if(detail && m.userData.near !== near){
+        m.userData.near = near;
+        for(let i = 0; i < detail.length; i++) detail[i].visible = near;
+    }
     if(c.braking !== c.lightOn && m.userData.rainLight){
         c.lightOn = c.braking;
         m.userData.rainLight.color.setHex(c.braking ? 0xff2020 : 0x550000);

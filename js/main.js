@@ -33,7 +33,8 @@ function updateCamera(dt){
     // 노면 진동 (연석/잔디/벽 충돌)
     const rumble = (physics.onKerb ? .012 : 0) + (physics.surface === "grass" ? .02 : 0) + (physics.surface === "gravel" ? .035 : 0);
     camState.shake = rumble * Math.min(1, Math.abs(physics.speed) / 20) + physics.wallHit * .05
-        + Math.min(.02, physics.porpoise * .08) + (physics.lockFront || physics.lockRear ? .01 : 0);
+        + Math.min(.02, physics.porpoise * .08) + (physics.lockFront || physics.lockRear ? .01 : 0)
+        + (physics.flatSpot[0] + physics.flatSpot[1]) * .002 * speedRatio;   // 플랫 스팟 진동
     const sx = (Math.random() - .5) * camState.shake;
     const sy = (Math.random() - .5) * camState.shake;
 
@@ -151,9 +152,14 @@ let lastTime = performance.now();
 let lastMinimapDraw = 0;
 let wakeLock = null;
 
+let rotateHintTimer = 0;
 function updateRotateHint(){
     if(!ui.rotateHint) return;
-    ui.rotateHint.classList.toggle("show", IS_MOBILE && gameState === "playing" && innerHeight > innerWidth);
+    const show = IS_MOBILE && gameState === "playing" && innerHeight > innerWidth;
+    ui.rotateHint.classList.toggle("show", show);
+    // 4초 뒤 자동으로 숨긴다 (세로로 계속 플레이해도 차를 가리지 않게)
+    clearTimeout(rotateHintTimer);
+    if(show) rotateHintTimer = setTimeout(() => ui.rotateHint.classList.remove("show"), 4000);
 }
 
 async function enterMobileMode(){
@@ -198,6 +204,8 @@ let raceStarting = false;
 async function startRace(){
     if(raceStarting) return;
     raceStarting = true;
+    // 숨겨질 버튼에 포커스가 남아 Enter/Space 로 다시 눌리지 않도록
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
     // 센서 권한 요청(iOS)은 클릭 직후 동기적으로 시작해야 하므로 await 전에 호출한다.
     const mobileReady = IS_MOBILE ? enterMobileMode() : null;
     ui.start.classList.add("hidden");
@@ -239,6 +247,16 @@ function pauseGame(){
     if(typeof showPauseView === "function") showPauseView("main");
     Input.throttle = Input.brake = false;
     Input.boost = false;
+}
+
+/** 그래픽 품질 변경: 저장 후 새로고침 (장면을 다시 만들어야 하므로) */
+function changeQuality(name){
+    if(!QUALITY_PRESETS[name]) return;
+    try{ localStorage.setItem(QUALITY_STORAGE_KEY, name); }catch(_){}
+    const params = new URLSearchParams(location.search);
+    params.delete("quality");
+    const q = params.toString();
+    location.href = location.pathname + (q ? "?" + q : "") + location.hash;
 }
 
 /** 시작 화면(메인 메뉴)으로 돌아가기 — 랩 수·타이어·상대 차량 등은 여기서 바꾼다 */
@@ -289,11 +307,7 @@ if(hudMenuBtn) hudMenuBtn.addEventListener("click", () => pauseGame());
 
 if(ui.qualitySelect){
     ui.qualitySelect.value = QUALITY_NAME;
-    ui.qualitySelect.addEventListener("change", () => {
-        const params = new URLSearchParams(location.search);
-        params.set("quality", ui.qualitySelect.value);
-        location.search = params.toString();
-    });
+    ui.qualitySelect.addEventListener("change", () => changeQuality(ui.qualitySelect.value));
 }
 
 Input.onCameraToggle = toggleCamera;

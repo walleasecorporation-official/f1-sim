@@ -126,9 +126,7 @@ bindPauseSegment(pauseEls.fps, v => {
 
 bindPauseSegment(pauseEls.quality, v => {
     if(v === QUALITY_NAME || !QUALITY_PRESETS[v]) return;
-    const params = new URLSearchParams(location.search);
-    params.set("quality", v);
-    location.search = params.toString();
+    changeQuality(v);
 });
 
 async function retryTilt(){
