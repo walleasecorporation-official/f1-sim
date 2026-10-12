@@ -260,11 +260,13 @@ const glassTexture = makeCanvasTexture(256, 64, (ctx, w, h) => {
    MATERIALS
 --------------------------------------------------------- */
 // PBR(Standard) 도로/유리/수면은 high 에서만 — medium 에서 Lambert 로 렌더 시간 약 -18%
+// Lambert 에는 환경맵(하늘) 반사가 없어 어두워지므로, 색 배율(선형)로 Standard 화면 밝기에 맞췄다.
+// (medium 스크린샷에서 도로 근/원거리, 피트 유리, 호수 평균 RGB 가 Standard 결과와 ±2 이내)
 const useStandard = QUALITY_NAME === "high";
 
 const roadMaterial = useStandard
     ? new THREE.MeshStandardMaterial({map: asphaltTexture, roughness: .88, metalness: 0, envMapIntensity: .35})
-    : new THREE.MeshLambertMaterial({map: asphaltTexture});
+    : new THREE.MeshLambertMaterial({map: asphaltTexture, color: new THREE.Color(1.56, 1.56, 1.56)});
 roadMaterial.polygonOffset = true;
 roadMaterial.polygonOffsetFactor = -2;
 roadMaterial.polygonOffsetUnits = -2;
@@ -279,7 +281,7 @@ const crowdMaterial = new THREE.MeshLambertMaterial({map: crowdTexture, side: TH
 const garageMaterial = new THREE.MeshLambertMaterial({map: garageTexture, side: THREE.DoubleSide});
 const glassMaterial = useStandard
     ? new THREE.MeshStandardMaterial({map: glassTexture, roughness: .08, metalness: .3, side: THREE.DoubleSide})
-    : new THREE.MeshLambertMaterial({map: glassTexture, side: THREE.DoubleSide});
+    : new THREE.MeshLambertMaterial({map: glassTexture, color: new THREE.Color(3.47, 3.47, 3.47), side: THREE.DoubleSide});
 const whitePaintMaterial = new THREE.MeshLambertMaterial({color: 0xf2f2f2, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6});
 
 /* ---------------------------------------------------------
@@ -662,7 +664,7 @@ const lakeShoreX = trackBounds.maxX + 110;
     geo.rotateX(-Math.PI / 2);
     const water = new THREE.Mesh(geo, useStandard
         ? new THREE.MeshStandardMaterial({color: 0x24506b, roughness: .12, metalness: .1, envMapIntensity: 1.1})
-        : new THREE.MeshLambertMaterial({color: 0x3a6f8c}));
+        : new THREE.MeshLambertMaterial({color: 0x9dbddc}));   // 하늘이 비친 밝은 수면 색
     water.position.y = -.02;
     water.material.polygonOffset = true;
     water.material.polygonOffsetFactor = -1;

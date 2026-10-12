@@ -724,7 +724,6 @@ kbd{
     border:1px solid #3a3f47;
     border-radius:6px;
     padding:6px 8px;
-    min-height:40px;
 }
 
 .panel button{
@@ -799,7 +798,7 @@ kbd{
 .panel .seg button{
     flex:1 1 0;
     min-width:0;
-    min-height:40px;
+    min-height:0;
     width:auto;
     margin:0;
     padding:7px 4px;
@@ -855,8 +854,8 @@ kbd{
     gap:8px;
 }
 .panel .stepper button{
-    width:44px;
-    height:40px;
+    width:36px;
+    height:30px;
     min-height:0;
     margin:0;
     padding:0;
@@ -1098,8 +1097,8 @@ kbd{
     .is-mobile .pad-left{ left:calc(10px + var(--safe-l)); }
     .is-mobile .pad-right{ right:calc(10px + var(--safe-r)); }
     .is-mobile #pushBtns{ left:calc(10px + var(--safe-l)); gap:6px; }
-    .is-mobile .push-btn{ width:80px; }
-    .is-mobile .push-btn.aero{ width:72px; }
+    .is-mobile .push-btn{ width:76px; }
+    .is-mobile .push-btn.aero{ width:78px; }
     .is-mobile .lamp:not(.on){ display:none; }
     .is-mobile #dash{ padding:5px 10px 7px; }
     .is-mobile #rpmLeds{ gap:2px; }
@@ -1107,9 +1106,9 @@ kbd{
 }
 
 /* =========================================================
-   SHORT SCREENS (가로 폰)
+   SHORT SCREENS (가로 폰 — Plus/Pro Max 가로 430px 까지)
 ========================================================= */
-@media (max-height:420px){
+@media (max-height:440px){
     .overlay{ padding:max(8px, var(--safe-t)) max(8px, var(--safe-r)) max(8px, var(--safe-b)) max(8px, var(--safe-l)); }
     .panel{ padding:14px 18px; }
     .panel h1{ font-size:28px; margin:6px 0 8px; }
@@ -1121,14 +1120,16 @@ kbd{
     .panel button{ padding:10px; margin-top:8px; }
     .panel h2{ margin:4px 0 10px; }
     .note{ margin-top:6px; line-height:1.35; }
-    .start-panel{ padding:14px 18px 0; }
-    .opt{ margin-bottom:6px; }
-    .panel .seg button{ padding:6px 4px; min-height:36px; }
+    .start-panel{ padding:10px 18px 0; }
+    .opt{ margin-bottom:4px; row-gap:1px; }
+    .opt-hint{ font-size:10.5px; line-height:1.15; }
+    .facts span{ letter-spacing:1px; }
+    .panel .seg button{ padding:6px 4px; }
     .panel .seg.two-line button{ padding:4px 3px; }
-    .panel .stepper button{ height:36px; }
-    .start-footer{ padding-bottom:12px; }
+    .panel .stepper button{ height:28px; }
+    .start-footer{ padding:3px 0 6px; }
     .setting{ font-size:12px; }
-    .setting select{ padding:4px 6px; min-height:36px; }
+    .setting select{ padding:4px 6px; }
     .finish-panel h2{ font-size:18px; margin:2px 0 6px; }
     .res-head{ margin:-4px 0 6px; }
     .res-head b{ font-size:26px; }
@@ -1137,6 +1138,16 @@ kbd{
     .res-sum{ margin-bottom:6px; }
     .res-sum div{ padding:5px 10px; }
 }
+/* 터치 기기: 시작 화면 버튼 · 선택 상자의 최소 터치 높이 */
+.is-mobile .panel .seg button{ min-height:38px; }
+.is-mobile .panel .stepper button{ width:44px; height:38px; }
+.is-mobile .setting select{ min-height:38px; }
+@media (max-height:440px){
+    .is-mobile .panel .seg button{ min-height:36px; }
+    .is-mobile .panel .stepper button{ height:36px; }
+    .is-mobile .setting select{ min-height:36px; }
+}
+
 
 /* 좁은 화면 (세로 폰): 칩 글자가 잘리지 않게 */
 @media (max-width:420px){
@@ -1178,6 +1189,12 @@ kbd{
     .tyre-chip i{ margin-right:3px; width:10px; height:10px; border-width:2.5px; }
     .seg.two-line button small{ font-size:8.5px; letter-spacing:-.2px; }
 }
+/* 아주 낮은 가로 화면 (812x375 · 740x360 등): 시작 화면이 스크롤 없이 들어가게 조금 더 줄인다 */
+@media (max-height:380px){
+    .start-panel{ padding-top:8px; }
+    .opt{ row-gap:1px; }
+    .start-footer{ padding-bottom:4px; }
+}
 
 /* =========================================================
    PAUSE MENU / SETTINGS
@@ -1203,23 +1220,27 @@ kbd{
 body:not(.playing) #hudMenuBtn{ display:none; }
 
 .pause-panel{
+    --pp-x:28px;           /* 패널 좌우 여백 */
     --pp-b:26px;           /* 패널 아래 여백 (sticky 푸터가 같은 값만큼 아래로 덮는다) */
     width:min(440px, 100%);
     max-height:100%;
     overflow-y:auto;
+    padding-left:var(--pp-x);
+    padding-right:var(--pp-x);
     padding-bottom:var(--pp-b);
 }
-/* 돌아가기 / 예·아니요: 설정이 길어도 패널 아래쪽에 고정, 내용은 그 밑으로 스크롤 */
+/* 돌아가기 / 예·아니요: 설정이 길어도 패널 아래쪽에 고정, 내용은 그 밑으로 스크롤
+   (sticky 기준은 패널 안쪽 여백까지라서 그만큼 음수로 내려 패널 끝에 붙인다) */
 .pause-footer{
     position:sticky;
-    bottom:0;
+    bottom:calc(-1 * var(--pp-b));
     z-index:1;
-    margin-bottom:calc(-1 * var(--pp-b));
-    padding-bottom:var(--pp-b);
+    margin:0 calc(-1 * var(--pp-x)) calc(-1 * var(--pp-b));
+    padding:0 var(--pp-x) var(--pp-b);
     background:linear-gradient(180deg, rgba(10,12,15,0), rgb(10,12,15) 12px);
 }
-@media (max-height:420px){
-    .pause-panel{ --pp-b:14px; }
+@media (max-height:440px){
+    .pause-panel{ --pp-x:18px; --pp-b:14px; }
 }
 .pause-panel h2{ margin:6px 0 12px; }
 .pause-view .brand{ justify-content:center; }
@@ -1290,7 +1311,10 @@ body:not(.playing) #hudMenuBtn{ display:none; }
     text-align:left;
 }
 .panel button:focus-visible{ outline:2px solid #fff; outline-offset:2px; }
-.is-mobile .pause-panel{ --pp-b:16px; padding:16px 18px var(--pp-b); }
+.is-mobile .pause-panel{ --pp-x:18px; --pp-b:16px; padding:16px var(--pp-x) var(--pp-b); }
 .is-mobile .pause-panel h2{ margin:4px 0 10px; font-size:20px; }
 .is-mobile .pause-view[data-view="main"] button{ margin-top:8px; padding:11px; }
+@media (max-height:440px){
+    .is-mobile .pause-view[data-view="main"] button{ margin-top:6px; }
+}
 .is-mobile .pause-settings .pset.mobile-only{ order:-1; }

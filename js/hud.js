@@ -71,6 +71,14 @@ function formatTime(t){
     return m + ":" + (s < 10 ? "0" : "") + s.toFixed(3);
 }
 
+/** 달리는 중인 랩 타이머: 0.1초 단위 (내림) — 끝난 랩 기록만 1/1000초로 표시 */
+function formatTenths(t){
+    const d = Math.floor(Math.max(0, t) * 10);
+    const m = Math.floor(d / 600);
+    const s = (d - m * 600) / 10;
+    return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1);
+}
+
 function hasKey(obj, key){
     return typeof key === "string" && Object.prototype.hasOwnProperty.call(obj, key);
 }
@@ -333,9 +341,14 @@ function updateRace(dt){
 
     if(race.state !== "racing") return false;
 
+    // updateRace 는 updateCar 보다 먼저 불린다: 지금 차 위치는 지난 프레임 updateCar 의 결과,
+    // 즉 dt 를 더하기 전 race.time 시각의 위치다.
+    const tPos = race.time;
     race.time += dt;
 
-    const i = physics.trackIndex;
+    // physics.trackIndex 는 updateCar 시작(이동 전)에 갱신되어 한 프레임 늦으므로 현재 위치로 다시 구한다.
+    // queryTrack 은 공유 객체를 돌려주므로 index 만 바로 읽는다.
+    const i = queryTrack(car.position.x, car.position.z, physics.trackIndex).index;
     const n = SAMPLE_COUNT;
     if(i > n * .30 && i < n * .40) race.checkpoints |= 1;
     if(i > n * .63 && i < n * .73) race.checkpoints |= 2;
@@ -344,13 +357,19 @@ function updateRace(dt){
     const crossed = race.lastIndex > n * .9 && i < n * .1;
     if(crossed) physicsOnNewLap();
     if(crossed && race.checkpoints === 3){
-        const lapTime = race.time - race.lapStart;
+        // 실제로 선을 넘은 시각: 선을 지난 거리(진행 방향) / 속도 만큼 되돌린다.
+        // 가장 가까운 샘플이 0 으로 바뀌는 건 선 1.25 m 앞부터라서 past 가 음수일 수도 있다 (곧 넘을 시각).
+        const s0 = trackSamples[0];
+        const past = (car.position.x - s0.x) * s0.tx + (car.position.z - s0.z) * s0.tz;
+        const tCross = tPos - Math.max(-SAMPLE_SPACING, Math.min(10, past)) / Math.max(5, Math.abs(physics.u));
+        const lapTime = tCross - race.lapStart;
         race.lastLap = lapTime;
         const isBest = !race.bestLap || lapTime < race.bestLap;
         if(isBest) race.bestLap = lapTime;
-        race.lapStart = race.time;
+        race.lapStart = tCross;
         race.checkpoints = 0;
         if(race.lap >= raceSettings.laps){
+            race.time = tCross;
             race.state = "finished";
             onRaceFinished && onRaceFinished();
         }else{
@@ -400,6 +419,16 @@ function entryProgress(e){
     return NaN;
 }
 
+function entryFinished(e){
+    return !!e && (e.finished === true || (!!e.car && e.car.finished === true));
+}
+
+/** 간격 계산용 진행 거리: 이미 완주한 차는 쿨다운 랩을 빼고 결승선 위치로 고정 */
+function entryRaceProgress(e){
+    const p = entryProgress(e);
+    return entryFinished(e) ? Math.min(p, raceSettings.laps * SAMPLE_COUNT) : p;
+}
+
 function entryKey(e){
     return e.car || e.code || e.name || e;
 }
@@ -425,7 +454,10 @@ function lapGapLabel(laps){
 function refreshStandings(){
     standing.avgSpeed += (Math.max(0, physics.u) - standing.avgSpeed) * .08;
     let pos = 1, total = 1, gapText = "", close = false;
-    let aheadProgress = NaN, aheadKey = null, myProgress = physics.progress, interval = NaN;
+    // 완주한 차(나 포함)는 쿨다운 랩을 빼고 결승선 위치로 고정해 비교한다
+    const finishLine = raceSettings.laps * SAMPLE_COUNT;
+    const myRaceProgress = race.state === "finished" ? Math.min(physics.progress, finishLine) : physics.progress;
+    let aheadProgress = NaN, aheadKey = null, myProgress = myRaceProgress, interval = NaN;
 
     const list = safeStandings();
     if(list && list.length){
@@ -436,16 +468,17 @@ function refreshStandings(){
         if(pi >= 0){
             total = list.length;
             const me = list[pi];
-            if(isFinite(entryProgress(me))) myProgress = entryProgress(me);
+            if(isFinite(entryRaceProgress(me))) myProgress = entryRaceProgress(me);
             if(typeof me.interval === "number") interval = me.interval;
-            if(pi > 0){ aheadProgress = entryProgress(list[pi - 1]); aheadKey = entryKey(list[pi - 1]); }
+            // 앞차가 이미 완주해 쿨다운 랩을 돌고 있어도 "+1 LAP" 이 되지 않게 결승선 위치로 고정
+            if(pi > 0){ aheadProgress = entryRaceProgress(list[pi - 1]); aheadKey = entryKey(list[pi - 1]); }
         }else{
             // 목록에 플레이어가 없으면 진행 거리로 끼워 넣는다
             total = list.length + 1;
             pi = 0;
             for(let k = 0; k < list.length; k++){
-                const p = entryProgress(list[k]);
-                if(p > physics.progress){
+                const p = entryRaceProgress(list[k]);
+                if(p > myRaceProgress){
                     pi++;
                     if(!(p >= aheadProgress)){ aheadProgress = p; aheadKey = entryKey(list[k]); }
                 }
@@ -455,8 +488,8 @@ function refreshStandings(){
     }else if(typeof aiCars !== "undefined" && aiCars && aiCars.length){
         total = aiCars.length + 1;
         for(let k = 0; k < aiCars.length; k++){
-            const p = aiCars[k].progress;
-            if(p > physics.progress){
+            const p = aiCars[k].finished ? Math.min(aiCars[k].progress, finishLine) : aiCars[k].progress;
+            if(p > myRaceProgress){
                 pos++;
                 if(!(p >= aheadProgress)){ aheadProgress = p; aheadKey = aiCars[k]; }
             }
@@ -608,10 +641,17 @@ function updateLampHUD(now){
     setClass("infoDirty", hudEls.infoDirty, "on", physics.dirtyAir > .3);
 }
 
+// 자주 바뀌는 숫자는 갱신 빈도를 제한 (레이아웃 작업 줄이기)
+const hudRate = {speedNext: 0};
+
 function updateHUD(){
     const now = performance.now();
 
-    setText("speed", hudEls.speed, String(Math.round(Math.abs(physics.speed) * 3.6)));
+    // 속도: 최대 20 Hz
+    if(now >= hudRate.speedNext){
+        hudRate.speedNext = now + 50;
+        setText("speed", hudEls.speed, String(Math.round(Math.abs(physics.speed) * 3.6)));
+    }
     setText("gear", hudEls.gear, physics.reverse ? "R" : physics.gear > 0 ? String(physics.gear) : "N");
 
     const rpmRatio = THREE.MathUtils.clamp((physics.engineRPM - physics.idleRPM) / (physics.engineMaxRPM - physics.idleRPM), 0, 1);
@@ -622,7 +662,18 @@ function updateHUD(){
     }
 
     setText("lap", hudEls.lap, String(Math.min(race.lap, raceSettings.laps)));
-    setText("lapTime", hudEls.lapTime, race.state === "racing" ? formatTime(race.time - race.lapStart) : race.state === "finished" ? formatTime(race.lastLap) : "0:00.000");
+    // 랩 타이머: 0.1초 자리가 바뀔 때만 (10 Hz)
+    if(race.state === "racing"){
+        const t = race.time - race.lapStart;
+        const tenth = Math.floor(Math.max(0, t) * 10);
+        if(hudCache.lapTenth !== tenth){
+            hudCache.lapTenth = tenth;
+            setText("lapTime", hudEls.lapTime, formatTenths(t));
+        }
+    }else{
+        hudCache.lapTenth = -1;
+        setText("lapTime", hudEls.lapTime, race.state === "finished" ? formatTime(race.lastLap) : "0:00.000");
+    }
     setText("lastLap", hudEls.lastLap, formatTime(race.lastLap));
     setText("bestLap", hudEls.bestLap, formatTime(race.bestLap));
 
