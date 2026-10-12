@@ -259,7 +259,8 @@ const glassTexture = makeCanvasTexture(256, 64, (ctx, w, h) => {
 /* ---------------------------------------------------------
    MATERIALS
 --------------------------------------------------------- */
-const useStandard = QUALITY_NAME !== "low";
+// PBR(Standard) 도로/유리/수면은 high 에서만 — medium 에서 Lambert 로 렌더 시간 약 -18%
+const useStandard = QUALITY_NAME === "high";
 
 const roadMaterial = useStandard
     ? new THREE.MeshStandardMaterial({map: asphaltTexture, roughness: .88, metalness: 0, envMapIntensity: .35})
@@ -500,7 +501,11 @@ const startYaw = Math.atan2(-trackSamples[0].tx, -trackSamples[0].tz);
 /* ---------------------------------------------------------
    START GANTRY + LIGHTS
 --------------------------------------------------------- */
-const startLights = [];
+// 램프 10개(5열 × 2행)를 InstancedMesh 하나로 그린다 (draw call 10 → 1), 색은 인스턴스별
+const START_LIGHT_ON = 0xff1a1a, START_LIGHT_OFF = 0x330608;
+const startLightColor = new THREE.Color();
+let startLights = null;
+let startLightsLit = -1;
 {
     const p = trackSamples[Math.round(5 / SAMPLE_SPACING)];
     const g = new THREE.Group();
@@ -514,26 +519,28 @@ const startLights = [];
     add(new THREE.BoxGeometry(5.4, 1.6, .5), 0, 6.6, .05);
     g.add(new THREE.Mesh(mergeGeometryList(parts), darkMetalMaterial));
 
+    // 인스턴스 색이 그대로 나오도록 재질 색은 흰색 (instanceColor 와 곱해진다)
+    startLights = new THREE.InstancedMesh(new THREE.CircleGeometry(.24, 14), new THREE.MeshBasicMaterial({color: 0xffffff}), 10);
+    const m = new THREE.Matrix4();
     for(let i = 0; i < 5; i++){
-        const lampGroup = [];
-        for(const y of [6.95, 6.3]){
-            const lamp = new THREE.Mesh(
-                new THREE.CircleGeometry(.24, 14),
-                new THREE.MeshBasicMaterial({color: 0x330608})
-            );
-            lamp.position.set(-2.0 + i * 1.0, y, .32);
-            g.add(lamp);
-            lampGroup.push(lamp);
-        }
-        startLights.push(lampGroup);
+        [6.95, 6.3].forEach((y, row) => {
+            startLights.setMatrixAt(i * 2 + row, m.makeTranslation(-2.0 + i * 1.0, y, .32));
+        });
     }
+    startLights.instanceMatrix.needsUpdate = true;
+    g.add(startLights);
+    setStartLights(0);
     scene.add(g);
 }
 
+/** 점등된 열 수(0~5). hud.js 가 매 프레임 호출하므로 바뀔 때만 색 버퍼를 갱신한다 */
 function setStartLights(count){
-    startLights.forEach((lamps, i) => {
-        for(const lamp of lamps) lamp.material.color.setHex(i < count ? 0xff1a1a : 0x330608);
-    });
+    if(count === startLightsLit || !startLights) return;
+    startLightsLit = count;
+    for(let k = 0; k < 10; k++){
+        startLights.setColorAt(k, startLightColor.setHex((k >> 1) < count ? START_LIGHT_ON : START_LIGHT_OFF));
+    }
+    startLights.instanceColor.needsUpdate = true;
 }
 
 /* ---------------------------------------------------------

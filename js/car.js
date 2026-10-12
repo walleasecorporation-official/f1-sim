@@ -295,6 +295,15 @@ car.add(steeringWheel);
         ctx.fillStyle = "#fff"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText("F1", w / 2, 25);
     }, {wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping});
     addPart(new THREE.PlaneGeometry(.11, .055), new THREE.MeshBasicMaterial({map: screen}), 0, .005, .0165, 0, 0, 0, steeringWheel);
+    // 그립 2개 / 장갑 2개를 재질별로 합친다 (draw call 6 → 4)
+    mergeChildrenInPlace(steeringWheel);
+}
+
+/** group 의 자식 Mesh 들을 재질별로 병합해 같은 group 안에 다시 넣는다 (group 로컬 좌표 유지) */
+function mergeChildrenInPlace(group){
+    const merged = mergeGroupByMaterial(group);
+    group.clear();
+    for(const mesh of [...merged.children]) group.add(mesh);
 }
 
 function suitGloveMaterial(){
@@ -354,6 +363,32 @@ const sidewallMaterial = new THREE.MeshStandardMaterial({map: sidewallTexture, r
 
 const wheels = [];
 
+/** 인덱스를 유지한 채 지오메트리들을 하나로 합친다 (position / normal / uv) */
+function mergeIndexedGeometries(list){
+    let nv = 0, ni = 0;
+    for(const g of list){ nv += g.attributes.position.count; ni += g.index.count; }
+    const position = new Float32Array(nv * 3), normal = new Float32Array(nv * 3), uv = new Float32Array(nv * 2);
+    const index = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let v = 0, i = 0;
+    for(const g of list){
+        position.set(g.attributes.position.array, v * 3);
+        normal.set(g.attributes.normal.array, v * 3);
+        uv.set(g.attributes.uv.array, v * 2);
+        const src = g.index.array;
+        for(let k = 0; k < src.length; k++) index[i + k] = src[k] + v;
+        v += g.attributes.position.count;
+        i += src.length;
+        g.dispose();
+    }
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute("position", new THREE.BufferAttribute(position, 3));
+    merged.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+    merged.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    merged.setIndex(new THREE.BufferAttribute(index, 1));
+    merged.computeBoundingSphere();
+    return merged;
+}
+
 function createWheel(side, x, z, radius, width, isFront){
     const steer = new THREE.Group();
     steer.position.set(x, radius, z);
@@ -374,16 +409,25 @@ function createWheel(side, x, z, radius, width, isFront){
     ];
     const tireGeo = new THREE.LatheGeometry(profile, QUALITY_NAME === "low" ? 20 : 30);
     tireGeo.rotateZ(Math.PI / 2);
-    addPart(tireGeo, tireMaterial, 0, 0, 0, 0, 0, 0, spin);
+    // 브레이크 덕트 / 업라이트 — 타이어 안쪽에 있고 양쪽 사이드월 원판에 가려져 직접 보이지는 않지만
+    // high 에서 그림자를 채운다. 축 대칭 원통이라 회전해도 모양이 같으므로 타이어와 한 지오메트리로 합친다.
+    // (바퀴당 draw call -1)
+    const upright = new THREE.CylinderGeometry(radius * .45, radius * .45, width * .6, 10);
+    upright.rotateZ(Math.PI / 2);
+    upright.translate(-side * .02, 0, 0);
+    addPart(mergeIndexedGeometries([tireGeo, upright]), tireMaterial, 0, 0, 0, 0, 0, 0, spin);
 
+    // 양쪽 사이드월 원판을 한 메시로 (바퀴당 draw call -1)
+    const discs = [];
     for(const face of [-1, 1]){
-        const disc = addPart(new THREE.CircleGeometry(radius * .995, 28), sidewallMaterial, face * (hw + .001), 0, 0, 0, face * Math.PI / 2, 0, spin);
-        disc.renderOrder = 1;
+        const disc = new THREE.CircleGeometry(radius * .995, 28);
+        disc.rotateY(face * Math.PI / 2);
+        disc.translate(face * (hw + .001), 0, 0);
+        discs.push(disc);
     }
-    // 브레이크 덕트 / 업라이트
-    addPart(new THREE.CylinderGeometry(radius * .45, radius * .45, width * .6, 10), carbonMaterial, -side * .02, 0, 0, 0, 0, Math.PI / 2, steer);
+    addPart(mergeIndexedGeometries(discs), sidewallMaterial, 0, 0, 0, 0, 0, 0, spin).renderOrder = 1;
 
-    wheels.push({steer, spin, radius, isFront});
+    wheels.push({steer, spin, radius, width, isFront});
 }
 
 createWheel(-1, -(CAR_SPEC.width / 2 - CAR_SPEC.frontTireWidth / 2) + .01, CAR_SPEC.frontAxleZ, CAR_SPEC.tireRadius, CAR_SPEC.frontTireWidth, true);
@@ -449,33 +493,98 @@ function updateCarVisuals(dt, speed, steering, braking){
 
 /* ---------------------------------------------------------
    AI 차량용 저사양 모델
-   플레이어 차량을 복제한 뒤 페인트/헬멧 색만 바꾸고 전체를 재질별로 병합한다.
-   (바퀴 회전 없음, 차량당 draw call 약 10개)
+   플레이어 차량 복제본을 재질별로 병합한 "템플릿"을 처음 한 번만 만들고,
+   모든 AI 차량이 같은 지오메트리를 공유한다 (차량마다 Mesh 만 새로 만든다).
+   차량별로 복제하는 재질은 페인트 / 헬멧 / 레인 라이트뿐이고 나머지는 공유.
+   (바퀴 회전 없음, 차량당 draw call 10개 — 원거리에서 detail 을 숨기면 3개)
+
+   반환 Group 의 userData 계약 (js/ai.js 가 사용):
+   - rainLight:      차량별 레인 라이트 재질 (브레이크 시 색 변경)
+   - ownMaterials:   이 차량 전용으로 복제한 재질 [paint, helmet, rainLight] — 폐기 시 dispose
+   - sharedGeometry: true → 폐기할 때 지오메트리/공유 재질은 dispose 하지 않는다
+   - detail:         원거리에서 숨겨도 되는 Mesh 배열
+                     (페인트 차체 / 카본 / 타이어를 제외한 전부: 흰색 도장, 헬멧·바이저,
+                      레인 라이트, 사이드월 원판, 무광 검정, 블롭 그림자)
 --------------------------------------------------------- */
-function createAICarMesh(paintHex, helmetHex){
+let aiCarTemplate = null;
+
+function buildAICarTemplate(){
     const clone = car.clone(true);
+    // 원본 ↔ 복제 노드 대응 (clone 은 자식 순서를 유지하므로 traverse 순서가 같다)
+    const src = [], dst = [];
+    car.traverse(o => src.push(o));
+    clone.traverse(o => dst.push(o));
+    const twin = new Map(src.map((o, i) => [o, dst[i]]));
+
+    // 복제 시점의 애니메이션 상태(피치/롤/차고, 플랩, 조향, 바퀴 회전)를 정지 자세로 되돌린다
     clone.position.set(0, 0, 0);
     clone.rotation.set(0, 0, 0);
+    twin.get(carBody).position.set(0, 0, 0);
+    twin.get(carBody).rotation.set(0, 0, 0);
+    twin.get(frontFlaps).rotation.set(0, 0, 0);
+    twin.get(rearFlap).rotation.set(0, 0, 0);
+    twin.get(steeringWheel).rotation.z = 0;
+    for(const w of wheels){
+        twin.get(w.steer).rotation.set(0, 0, 0);
+        const spin = twin.get(w.spin);
+        spin.rotation.set(0, 0, 0);
+        // 원거리에서 사이드월 원판(detail)을 숨겨도 휠 가운데 구멍이 뚫려 보이지 않도록
+        // 원판 바로 안쪽에 타이어 재질 막음판을 넣는다 (가까이에선 원판에 가려 보이지 않음)
+        for(const face of [-1, 1]){
+            addPart(new THREE.CircleGeometry(w.radius * .8, 12), tireMaterial, face * (w.width / 2 - .015), 0, 0, 0, face * Math.PI / 2, 0, spin);
+        }
+    }
+
+    // 장갑 / 스티어링 휠 화면 등 보이지 않는 부품은 뺀다
+    const drop = [];
+    clone.traverse(o => {
+        if(!o.isMesh) return;
+        if(o.material === suitGloveMaterial() || o.material.isMeshBasicMaterial && o.material !== rainLightMaterial && !o.material.transparent) drop.push(o);
+    });
+    for(const o of drop) o.parent.remove(o);
+    clone.updateMatrixWorld(true);
+
+    // 재질별 병합 (반투명 블롭 그림자는 원본 지오메트리를 그대로 공유)
+    const merged = mergeGroupByMaterial(clone, o => !!(o.material && o.material.transparent));
+    return merged.children.map(m => ({
+        geometry: m.geometry,
+        material: m.material,
+        position: m.position.clone(),
+        quaternion: m.quaternion.clone(),
+        scale: m.scale.clone(),
+        renderOrder: m.material === sidewallMaterial ? 1 : m.renderOrder
+    }));
+}
+
+function createAICarMesh(paintHex, helmetHex){
+    if(!aiCarTemplate) aiCarTemplate = buildAICarTemplate();
     const paint = paintMaterial.clone();
     paint.color.setHex(paintHex);
     const helmet = helmetMaterial.clone();
     helmet.color.setHex(helmetHex);
     const rainLight = rainLightMaterial.clone();
-    const drop = [];
-    clone.traverse(o => {
-        if(!o.isMesh) return;
-        if(o.material === paintMaterial) o.material = paint;
-        else if(o.material === helmetMaterial) o.material = helmet;
-        else if(o.material === rainLightMaterial) o.material = rainLight;
-        else if(o.material === suitGloveMaterial() || o.material.isMeshBasicMaterial && o.material !== rainLightMaterial && !o.material.transparent) drop.push(o);
-    });
-    for(const o of drop) o.parent.remove(o);
-    clone.updateMatrixWorld(true);
-    const merged = mergeGroupByMaterial(clone, o => !!(o.material && o.material.transparent));
-    merged.traverse(o => {
-        if(o.isMesh) o.castShadow = QUALITY.shadows && !o.material.transparent;
-    });
-    merged.userData.rainLight = rainLight;
-    scene.add(merged);
-    return merged;
+    rainLight.color.setHex(0x550000);   // 복제 시점에 플레이어가 브레이크 중이어도 꺼진 상태로 시작
+    const perCar = new Map([[paintMaterial, paint], [helmetMaterial, helmet], [rainLightMaterial, rainLight]]);
+    const alwaysVisible = new Set([paintMaterial, carbonMaterial, tireMaterial]);
+
+    const group = new THREE.Group();
+    const detail = [];
+    for(const t of aiCarTemplate){
+        const mesh = new THREE.Mesh(t.geometry, perCar.get(t.material) || t.material);
+        mesh.position.copy(t.position);
+        mesh.quaternion.copy(t.quaternion);
+        mesh.scale.copy(t.scale);
+        mesh.renderOrder = t.renderOrder;
+        mesh.castShadow = QUALITY.shadows && !t.material.transparent;
+        mesh.matrixAutoUpdate = false;
+        mesh.updateMatrix();
+        group.add(mesh);
+        if(!alwaysVisible.has(t.material)) detail.push(mesh);
+    }
+    group.userData.rainLight = rainLight;
+    group.userData.ownMaterials = [paint, helmet, rainLight];
+    group.userData.sharedGeometry = true;
+    group.userData.detail = detail;
+    scene.add(group);
+    return group;
 }

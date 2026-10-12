@@ -312,7 +312,10 @@
                 </div>
                 <p class="pset-hint">랩 수 · 타이어 · 상대 차량 수는 <b>메인 메뉴</b>에서 바꿀 수 있어요.</p>
             </div>
-            <button type="button" class="primary" data-back>돌아가기</button>
+            <!-- 스크롤해도 항상 보이게 (패널 아래쪽에 고정) -->
+            <div class="pause-footer">
+                <button type="button" class="primary" data-back>돌아가기</button>
+            </div>
         </div>
 
         <!-- 조작법 -->
@@ -336,7 +339,9 @@
                 <div><b>X-MODE</b>: 직선에서 저항↓ (에어로 수동일 때)</div>
                 <div><b>◎</b> 기울기 영점 · <b>CAM</b> 카메라 · <b>↺</b> 트랙 복귀 · <b>❚❚</b> 일시정지</div>
             </div>
-            <button type="button" class="primary" data-back>돌아가기</button>
+            <div class="pause-footer">
+                <button type="button" class="primary" data-back>돌아가기</button>
+            </div>
         </div>
 
         <!-- 확인 -->
@@ -344,8 +349,10 @@
             <div class="brand"><span class="stripe"></span>CONFIRM</div>
             <h2 id="confirmTitle">레이스를 다시 시작할까요?</h2>
             <p class="pset-hint" id="confirmText">현재 기록은 사라집니다.</p>
-            <button type="button" class="primary" id="confirmYes">예</button>
-            <button type="button" data-back>아니요</button>
+            <div class="pause-footer">
+                <button type="button" class="primary" id="confirmYes">예</button>
+                <button type="button" data-back>아니요</button>
+            </div>
         </div>
     </div>
 </div>
