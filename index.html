@@ -2,71 +2,158 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0d10">
 <title>F1 Racing Simulator</title>
-
-<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/style.css">
 </head>
 
 <body>
 
 <canvas id="game"></canvas>
 
-<div id="start">
-    <div class="panel">
-        <h1>F1 RACING</h1>
+<!-- ================= HUD ================= -->
+<div id="hud">
+    <div id="timingBox" class="hud-panel">
+        <div class="lap-row"><span class="label">LAP</span> <b id="lap">1</b><span class="dim">/<span id="lapTotal">3</span></span></div>
+        <div id="lapTime">0:00.000</div>
+        <div class="sub-row"><span class="label">LAST</span><span id="lastLap">--:--.---</span></div>
+        <div class="sub-row"><span class="label">BEST</span><span id="bestLap" class="best">--:--.---</span></div>
+    </div>
 
-        <p>
-            W / ↑ : 가속<br>
-            S / ↓ : 브레이크 / 정지 후 후진<br>
-            A / D : 조향<br>
-            V : 1인칭 / 3인칭<br>
-            R : 리셋
-        </p>
+    <div id="infoBox">
+        <div id="cameraMode" class="hud-chip">CHASE</div>
+        <div id="surface" class="hud-chip">DRY ASPHALT</div>
+        <div id="sectorName" class="hud-chip"></div>
+    </div>
 
-        <button id="startBtn">
-            RACE START
+    <div id="dash" class="hud-panel">
+        <div id="rpmLeds">
+            <i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
+            <i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i><i class="r"></i>
+            <i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="b"></i>
+        </div>
+        <div id="dashRow">
+            <div id="speedBox"><div id="speed">0</div><div id="unit">KM/H</div></div>
+            <div id="gear">N</div>
+        </div>
+    </div>
+
+    <div id="message"></div>
+    <div id="fps"></div>
+</div>
+
+<div id="minimapWrap">
+    <div id="minimapTitle">KOREA · YEONGAM</div>
+    <canvas id="minimap"></canvas>
+</div>
+
+<!-- ================= MOBILE CONTROLS ================= -->
+<div id="mobileControls" class="mode-tilt">
+    <div id="mobileTop">
+        <button id="btnPause" class="icon-btn" aria-label="일시정지">❚❚</button>
+        <button id="btnCamera" class="icon-btn" aria-label="카메라">CAM</button>
+        <button id="btnRecover" class="icon-btn" aria-label="트랙 복귀">↺</button>
+        <button id="btnCenter" class="icon-btn" aria-label="기울기 영점">◎</button>
+    </div>
+
+    <div id="tiltMeter"><div id="tiltIndicator"></div></div>
+
+    <div class="pad-left">
+        <button id="btnLeft" class="steer-btn" aria-label="왼쪽">◀</button>
+        <button id="btnRight" class="steer-btn" aria-label="오른쪽">▶</button>
+        <button id="btnBrake" class="pedal brake" aria-label="브레이크">
+            <span class="pedal-icon"></span>BRAKE
+        </button>
+    </div>
+    <div class="pad-right">
+        <button id="btnThrottle" class="pedal throttle" aria-label="가속">
+            <span class="pedal-icon"></span>THROTTLE
         </button>
     </div>
 </div>
 
-<div id="minimapWrap">
-    <div id="minimapTitle">TRACK MAP</div>
-    <canvas id="minimap" width="156" height="156"></canvas>
+<div id="rotateHint">📱↻ 가로 모드로 돌리면 더 넓게 볼 수 있어요</div>
+
+<!-- ================= START ================= -->
+<div id="start" class="overlay">
+    <div class="panel">
+        <div class="brand"><span class="stripe"></span>F1 RACING SIMULATOR</div>
+        <h1>KOREA<br><small>INTERNATIONAL CIRCUIT · YEONGAM</small></h1>
+        <div class="facts">
+            <div><b>5.6</b><span>KM</span></div>
+            <div><b>18</b><span>TURNS</span></div>
+            <div><b>3</b><span>LAPS</span></div>
+            <div><b>2026</b><span>SPEC CAR</span></div>
+        </div>
+
+        <div class="controls desktop-only">
+            <div><kbd>W</kbd> 가속</div>
+            <div><kbd>S</kbd> 브레이크 / 정지 후 후진</div>
+            <div><kbd>A</kbd> <kbd>D</kbd> 조향</div>
+            <div><kbd>V</kbd> 카메라 전환</div>
+            <div><kbd>R</kbd> 트랙 복귀</div>
+            <div><kbd>P</kbd> 일시정지</div>
+        </div>
+
+        <div class="controls mobile-only">
+            <div>📱 폰을 <b>핸들처럼 기울여</b> 조향</div>
+            <div>오른쪽 <b>THROTTLE</b> · 왼쪽 <b>BRAKE</b></div>
+            <div>◎ 버튼: 현재 자세를 기울기 영점으로</div>
+            <label class="setting">조향 감도
+                <select id="sensSelect">
+                    <option value="low">낮음</option>
+                    <option value="normal" selected>보통</option>
+                    <option value="high">높음</option>
+                </select>
+            </label>
+        </div>
+
+        <label class="setting">그래픽
+            <select id="qualitySelect">
+                <option value="low">낮음 (저사양)</option>
+                <option value="medium">중간</option>
+                <option value="high">높음</option>
+            </select>
+        </label>
+
+        <button id="startBtn" class="primary">RACE START</button>
+        <p class="note mobile-only">기울기 조향은 HTTPS 주소에서만 동작합니다. 센서를 쓸 수 없으면 좌/우 버튼이 자동으로 나타나요.</p>
+    </div>
 </div>
 
-<div id="hud">
-
-    <div id="position">
-        POSITION&nbsp;&nbsp;1 / 1<br>
-        LAP&nbsp;&nbsp;<span id="lap">1</span> / 3
+<div id="pause" class="overlay hidden">
+    <div class="panel small">
+        <h2>PAUSED</h2>
+        <button id="resumeBtn" class="primary">RESUME</button>
+        <button id="restartBtn">RESTART</button>
     </div>
-
-    <div id="cameraMode">
-        ONBOARD
-    </div>
-
-    <div id="surface">
-        ASPHALT
-    </div>
-
-    <div id="speedBox">
-        <div id="speed">0</div>
-        <div id="unit">KM/H</div>
-    </div>
-
-    <div id="gear">N</div>
-
-    <div id="rpmBar">
-        <div id="rpmFill"></div>
-    </div>
-
 </div>
 
+<div id="finish" class="overlay hidden">
+    <div class="panel small">
+        <div class="brand"><span class="stripe"></span>CHEQUERED FLAG</div>
+        <h2>RACE FINISHED</h2>
+        <div id="results"></div>
+        <button id="againBtn" class="primary">RACE AGAIN</button>
+    </div>
+</div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
-<script src="script.js"></script>
+<script src="js/vendor/three.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/track.js"></script>
+<script src="js/core.js"></script>
+<script src="js/environment.js"></script>
+<script src="js/car.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/input.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/main.js"></script>
 
 </body>
 </html>
