@@ -83,7 +83,7 @@ const TYRE_COMPOUNDS = {
 const TYRE_AMBIENT = 28;
 const TYRE_BLANKET = 70;       // 2026 타이어 블랭킷 온도
 const TYRE_HEAT_CAPACITY = 1200;   // J/K (표면+카커스 등가)
-const TYRE_HEAT_SHARE = .075;      // 슬립 일률 중 타이어로 가는 비율
+const TYRE_HEAT_SHARE = .13;       // 슬립 일률 중 타이어로 가는 비율
 const TYRE_WEAR_PER_J = 4.2e-8;
 
 const SURFACES = {
@@ -190,6 +190,14 @@ const HEAVE_STIFFNESS = 650000;    // N/m
 const HEAVE_DAMPING_RATIO = .16;
 const FLOOR_STALL_HEIGHT = .012;
 const GROUND_EFFECT_GAIN = .15;    // 2026: 부분 평면 플로어 → 그라운드 이펙트 축소
+
+// 단수별 토크 맵: 저단에서 ICE/MGU-K 전달량을 줄여 휠스핀을 완화
+const GEAR_TORQUE_MAP = [
+    {ice: .78, ers: .35},
+    {ice: .9,  ers: .6},
+    {ice: 1,   ers: .85},
+    {ice: 1,   ers: 1}
+];
 
 /* =========================================================
    ENGINE TORQUE CURVE (기존 곡선 형태 유지, 2026 ICE 출력으로 스케일)
@@ -337,14 +345,17 @@ function computeWake(progress, lateral, self){
 
 /** 오버테이크 모드: 판정 지점(에어로 구간 시작)에서 앞차와 1초 이내면 활성 가능 */
 let lastDetectionZone = -1;
+let lastDetectionProgress = -Infinity;
 function updateOverride(dt, throttle){
     const idx = physics.trackIndex;
     for(let z = 0; z < aeroZones.length; z++){
         const zs = aeroZones[z].start;
         let d = idx - zs;
         if(d < 0) d += SAMPLE_COUNT;
-        if(d < 4 && lastDetectionZone !== z){
+        const fresh = lastDetectionZone !== z || physics.progress - lastDetectionProgress > SAMPLE_COUNT / 2;
+        if(d < 4 && fresh){
             lastDetectionZone = z;
+            lastDetectionProgress = physics.progress;
             const gapSeconds = wakeResult.gapAhead / Math.max(10, physics.u);
             physics.overrideArmed = gapSeconds <= 1.0;
             if(physics.overrideArmed){
@@ -373,6 +384,8 @@ function updateGearbox(throttle){
         return;
     }
     let rpm = wheelRPM() * physics.gears[physics.gear - 1] * physics.finalDrive;
+    // 휠스핀 중에는 바퀴가 차보다 빨리 돈다 → 회전수 상승 (변속 가능)
+    if(physics.wheelspin) rpm *= 1.25;
     // 1단 출발: 클러치 슬립으로 회전수 유지
     if(physics.gear === 1 && throttle) rpm = Math.max(rpm, POWER_UNIT.launchRPM);
     physics.engineRPM = Math.max(POWER_UNIT.idleRPM, Math.min(POWER_UNIT.maxRPM, rpm));
@@ -404,16 +417,19 @@ function computeDriveDemand(throttle){
     const ratio = physics.gears[physics.gear - 1] * physics.finalDrive;
     // 연료가 바닥나면 보호 모드(ICE 25%)로 피트까지 굴러갈 수 있게 한다
     const fuelScale = physics.fuel > 0 ? 1 : .25;
-    const iceForce = torque * ratio * VEHICLE.drivetrainEfficiency / VEHICLE.tireRadius * fuelScale;
+    // 드라이버빌리티 토크 맵 (실제 팀도 단수별로 토크 전달을 제한한다 — TC 와 달리 합법)
+    const gearMap = GEAR_TORQUE_MAP[Math.min(GEAR_TORQUE_MAP.length - 1, physics.gear - 1)];
+    const iceForce = torque * ratio * VEHICLE.drivetrainEfficiency / VEHICLE.tireRadius * fuelScale * gearMap.ice;
     physics.iceKW = torque * rpm * Math.PI / 30 / 1000 * fuelScale;
 
     let ersForce = 0;
     if(physics.ersEnergy > 0){
         const kmh = absU * 3.6;
         const limit = mgukPowerLimitKW(kmh, physics.overrideActive);
-        physics.ersDeployKW = limit;
         // 저속에서는 MGU-K 토크 한계로 제한
-        ersForce = Math.min(9000, limit * 1000 / Math.max(absU, 6));
+        ersForce = Math.min(9000, limit * 1000 / Math.max(absU, 6)) * gearMap.ers;
+        // 실제 기계 출력 (배터리 소모 계산용)
+        physics.ersDeployKW = ersForce * absU / 1000;
     }
     physics.iceShare = iceForce / Math.max(1, iceForce + ersForce);
     return iceForce + ersForce;
@@ -464,7 +480,11 @@ function updateCar(dt, controlsLocked){
     physics.brakePressure += (brakeTarget - physics.brakePressure) * Math.min(1, rate * dt);
 
     const driving = !forwardBraking && !reverseBraking && !controlsLocked && (throttle || (physics.reverse && brakeInput));
-    let driveDemand = driving ? computeDriveDemand(true) : (computeDriveDemand(false), 0);
+    // 가속 페달 램프: 디지털 입력(키보드/버튼)도 0→100% 를 약 0.3초에 걸쳐 밟는다
+    const pedalTarget = driving ? 1 : 0;
+    physics.throttle += (pedalTarget - physics.throttle) * Math.min(1, (pedalTarget > physics.throttle ? 3.5 : 10) * dt);
+    let driveDemand = driving ? computeDriveDemand(true) * physics.throttle : (computeDriveDemand(false), 0);
+    physics.ersDeployKW *= physics.throttle;
 
     /* 조향: 속도 감응형 최대 조향각
        현재 타이어+다운포스로 낼 수 있는 최대 횡가속(a_max)에 필요한 조향각의 약 1.6배까지만 허용.
@@ -584,7 +604,7 @@ function integrateDynamics(h, driveDemand, assists, throttle){
         const sign = Math.sign(rearDemand);
         if(driveDemand !== 0 && sign === Math.sign(driveDemand)){
             if(assists.tc){ rearDemand = sign * FmaxR * .95; physics.tcActive = true; }
-            else{ rearDemand = sign * FmaxR * V.slideFactor; latScaleR = .3; physics.wheelspin = true; }
+            else{ rearDemand = sign * FmaxR * V.slideFactor; latScaleR = .55; physics.wheelspin = true; }
             usedDrive = rearDemand;
         }else{
             if(assists.abs){ rearDemand = sign * FmaxR * .97; physics.absActive = true; }
@@ -686,8 +706,9 @@ function integrateDynamics(h, driveDemand, assists, throttle){
     // 연료: ICE 가 실제로 노면에 전달한 일 + 클러치 슬립/보조 손실
     stepEnergy.fuelJ = usedDrive > 0 ? (usedDrive * physics.iceShare * Math.max(absU, 4) / V.drivetrainEfficiency + 12000) * h : 0;
     if(physics.ersDeployKW > 0 && driveDemand > 0){
+        // 실제로 노면에 전달된 비율만큼 MGU-K 출력 사용 (모터/인버터 효율 95%)
         const share = Math.min(1, Math.max(0, usedDrive / driveDemand));
-        stepEnergy.deploy = physics.ersDeployKW * 1000 * share * h;
+        stepEnergy.deploy = physics.ersDeployKW * 1000 * share * h / .95;
     }
     if(!physics.reverse && absU > 3){
         const regenForce = Math.min(Fbr, POWER_UNIT.mgukMaxKW * 1000 / absU);
@@ -756,15 +777,17 @@ function updateTyres(dt){
     const compound = TYRE_COMPOUNDS[physics.compound];
 
     // 축별 슬립 일률 (횡슬립 + 종슬립)
-    let pf = Math.abs(f.Fyf) * Math.abs(Math.sin(f.alphaF)) * absU + Math.abs(f.Fxf) * absU * .015;
-    let pr = Math.abs(f.Fyr) * Math.abs(Math.sin(f.alphaR)) * absU + Math.abs(f.Fxr) * absU * .02;
+    let pf = Math.abs(f.Fyf) * Math.abs(Math.sin(f.alphaF)) * absU + Math.abs(f.Fxf) * absU * .012;
+    let pr = Math.abs(f.Fyr) * Math.abs(Math.sin(f.alphaR)) * absU + Math.abs(f.Fxr) * absU * .009;
     if(physics.lockFront) pf += Math.abs(f.Fxf) * absU * .5;
     if(physics.lockRear) pr += Math.abs(f.Fxr) * absU * .5;
-    if(physics.wheelspin) pr += Math.abs(f.Fxr) * Math.max(8, absU) * .5;
+    if(physics.wheelspin) pr += Math.abs(f.Fxr) * 2.5;   // 슬립 속도 ≈ 2.5 m/s
     if(physics.surface === "grass" || physics.surface === "gravel"){ pf *= .4; pr *= .4; }
 
     // 좌우 하중 배분 (횡하중 이동)
-    const latShare = Math.max(-.42, Math.min(.42, physics.ay * VEHICLE.cgHeight / (VEHICLE.trackWidth * G) * .9));
+    // 횡하중 이동량 = m·ay·h / track, 전체 수직하중(무게+다운포스) 대비 비율
+    const totalFz = Math.max(1, (f.Fzf || 0) + (f.Fzr || 0));
+    const latShare = Math.max(-.4, Math.min(.4, physics.mass * physics.ay * VEHICLE.cgHeight / (VEHICLE.trackWidth * totalFz)));
     // 좌회전(ay>0)이면 오른쪽(바깥) 타이어 하중 증가
     const shareL = .5 - latShare, shareR = .5 + latShare;
     const shares = [shareL, shareR, shareL, shareR];
@@ -774,7 +797,7 @@ function updateTyres(dt){
     for(let i = 0; i < 4; i++){
         const heat = power[i] * shares[i] * TYRE_HEAT_SHARE;
         const T = physics.tyreTemp[i];
-        physics.tyreTemp[i] = T + (heat - cooling * (T - TYRE_AMBIENT)) / TYRE_HEAT_CAPACITY * dt;
+        physics.tyreTemp[i] = Math.max(TYRE_AMBIENT, Math.min(160, T + (heat - cooling * (T - TYRE_AMBIENT)) / TYRE_HEAT_CAPACITY * dt));
         // 과열 시 마모 가속
         const over = Math.max(0, T - compound.optimum - 12) / 20;
         physics.tyreWear[i] = Math.min(1, physics.tyreWear[i] + power[i] * shares[i] * TYRE_WEAR_PER_J * compound.wear * (1 + over) * dt);
@@ -907,6 +930,7 @@ function resetCar(){
     physics.trackIndex = g.index;
     physics.progress = g.index - SAMPLE_COUNT;
     lastDetectionZone = -1;
+    lastDetectionProgress = -Infinity;
 }
 
 /** R 키: 가장 가까운 트랙 중앙으로 복귀 (레이스는 계속) */
