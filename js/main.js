@@ -104,7 +104,7 @@ function adaptResolution(dt){
     perf.fps = perf.frames / perf.time;
     perf.frames = 0;
     perf.time = 0;
-    if(URL_PARAMS.has("fps")) hudEls.fps.textContent = Math.round(perf.fps) + " FPS · x" + currentPixelRatio.toFixed(2);
+    if(typeof showFps !== "undefined" ? showFps : URL_PARAMS.has("fps")) hudEls.fps.textContent = Math.round(perf.fps) + " FPS · x" + currentPixelRatio.toFixed(2);
 
     const maxPr = Math.min(window.devicePixelRatio || 1, QUALITY.maxPixelRatio);
     let next = currentPixelRatio;
@@ -173,27 +173,43 @@ async function enterMobileMode(){
     }catch(_){}
 
     const tiltOk = await tiltPromise;
-    Input.tiltActive = tiltOk;
-    ui.mobileControls.classList.toggle("mode-tilt", tiltOk);
-    ui.mobileControls.classList.toggle("mode-buttons", !tiltOk);
-    // 버튼 조향 모드: 왼손 = ◀ ▶, 오른손 = BRAKE + THROTTLE
-    const brake = document.getElementById("btnBrake");
-    const throttle = document.getElementById("btnThrottle");
-    if(!tiltOk) throttle.parentNode.insertBefore(brake, throttle);
-    else document.querySelector("#mobileControls .pad-left").appendChild(brake);
-    if(!tiltOk) showMessage("기울기 센서를 쓸 수 없어 버튼 조향으로 전환했어요", 3.2);
+    const preferButtons = typeof startUI !== "undefined" && startUI.steerMode === "buttons";
+    setSteerMode(tiltOk && !preferButtons);
+    if(preferButtons) showMessage("버튼 조향 모드 (설정에서 기울기로 바꿀 수 있어요)", 2.6);
+    else if(!tiltOk) showMessage(tiltStatus === "insecure" ? "HTTPS 주소가 아니라 기울기 센서를 쓸 수 없어요 — 버튼 조향" : "기울기 센서를 쓸 수 없어 버튼 조향으로 전환했어요", 3.2);
     else showMessage("폰을 핸들처럼 기울여 조향하세요", 2.6);
 }
 
+/** 조향 방식 전환: true = 기울기, false = 화면 버튼 */
+function setSteerMode(useTilt){
+    Input.tiltActive = useTilt;
+    Input.steer = 0;
+    ui.mobileControls.classList.toggle("mode-tilt", useTilt);
+    ui.mobileControls.classList.toggle("mode-buttons", !useTilt);
+    // 버튼 조향 모드: 왼손 = ◀ ▶, 오른손 = BRAKE + THROTTLE
+    const brake = document.getElementById("btnBrake");
+    const throttle = document.getElementById("btnThrottle");
+    if(!useTilt) throttle.parentNode.insertBefore(brake, throttle);
+    else document.querySelector("#mobileControls .pad-left").appendChild(brake);
+    if(useTilt) calibrateTilt();
+}
+
+let raceStarting = false;
 async function startRace(){
-    if(IS_MOBILE){
-        setTiltSensitivity(ui.sensSelect ? ui.sensSelect.value : "normal");
-        await enterMobileMode();
-        calibrateTilt();
-    }
+    if(raceStarting) return;
+    raceStarting = true;
+    // 센서 권한 요청(iOS)은 클릭 직후 동기적으로 시작해야 하므로 await 전에 호출한다.
+    const mobileReady = IS_MOBILE ? enterMobileMode() : null;
     ui.start.classList.add("hidden");
     ui.finish.classList.add("hidden");
     ui.pause.classList.add("hidden");
+    gameState = "starting";
+    Input.throttle = Input.brake = Input.boost = false;
+    if(mobileReady){
+        setTiltSensitivity(ui.sensSelect ? ui.sensSelect.value : "normal");
+        try{ await mobileReady; }catch(_){}
+        calibrateTilt();
+    }
     setupGrid();
     resetRace();
     camState.initialized = false;
@@ -201,6 +217,7 @@ async function startRace(){
     document.body.classList.add("playing");
     updateRotateHint();
     lastTime = performance.now();
+    raceStarting = false;
 }
 
 /** 시작 화면 설정을 반영하고 그리드에 차량을 세운다 (플레이어는 맨 뒤에서 출발) */
@@ -219,7 +236,24 @@ function pauseGame(){
     if(gameState !== "playing") return;
     gameState = "paused";
     ui.pause.classList.remove("hidden");
+    if(typeof showPauseView === "function") showPauseView("main");
     Input.throttle = Input.brake = false;
+    Input.boost = false;
+}
+
+/** 시작 화면(메인 메뉴)으로 돌아가기 — 랩 수·타이어·상대 차량 등은 여기서 바꾼다 */
+function goToMenu(){
+    ui.pause.classList.add("hidden");
+    ui.finish.classList.add("hidden");
+    ui.start.classList.remove("hidden");
+    gameState = "menu";
+    document.body.classList.remove("playing");
+    Input.throttle = Input.brake = Input.boost = false;
+    setupGrid();
+    race.state = "idle";
+    setStartLights(0);
+    camState.initialized = false;
+    updateRotateHint();
 }
 
 function resumeGame(){
@@ -246,8 +280,12 @@ onRaceFinished = () => {
 
 ui.startBtn.addEventListener("click", startRace);
 ui.resumeBtn.addEventListener("click", resumeGame);
-ui.restartBtn.addEventListener("click", () => { ui.pause.classList.add("hidden"); startRace(); });
+// RESTART / 메인 메뉴 / 설정 버튼은 js/menu.js 에서 확인 단계와 함께 연결한다.
 ui.againBtn.addEventListener("click", startRace);
+const finishMenuBtn = document.getElementById("finishMenuBtn");
+if(finishMenuBtn) finishMenuBtn.addEventListener("click", goToMenu);
+const hudMenuBtn = document.getElementById("hudMenuBtn");
+if(hudMenuBtn) hudMenuBtn.addEventListener("click", () => pauseGame());
 
 if(ui.qualitySelect){
     ui.qualitySelect.value = QUALITY_NAME;

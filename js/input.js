@@ -168,25 +168,52 @@ function calibrateTilt(){
     if(navigator.vibrate) navigator.vibrate(20);
 }
 
+/*
+   기울기 센서 상태 — 설정 메뉴에 이유를 보여 주기 위해 기록한다.
+   active      : 동작 중
+   insecure    : HTTPS 가 아닌 주소 (브라우저가 센서를 막음)
+   denied      : 사용자가 권한을 거부 (iPhone)
+   unsupported : 센서 API 없음 (PC 브라우저 등)
+   no-data     : API 는 있지만 값이 들어오지 않음 (임베드 페이지, 센서 없음)
+*/
+let tiltStatus = "unknown";
+let tiltListening = false;
+
+function tiltStatusText(){
+    switch(tiltStatus){
+        case "active": return "기울기 센서 동작 중";
+        case "insecure": return "HTTPS 주소가 아니라서 브라우저가 기울기 센서를 막았어요. https:// 로 시작하는 주소(GitHub Pages 등)로 접속하세요.";
+        case "denied": return "동작 및 방향 권한이 거부됐어요. '기울기 다시 시도'를 누르고 허용을 선택하세요. (Safari: 설정 → Safari → 동작 및 방향 접근)";
+        case "unsupported": return "이 기기/브라우저에는 기울기 센서가 없어요. 버튼 조향을 사용하세요.";
+        case "no-data": return "센서 값이 들어오지 않아요. 다른 페이지 안에 띄운 경우 브라우저가 막았을 수 있어요. 게임 주소를 직접 열어 보세요.";
+        default: return "아직 확인하지 않았어요. RACE START 를 누르면 확인합니다.";
+    }
+}
+
 /** 사용자 제스처(버튼 클릭) 안에서 호출해야 iOS 권한 요청이 동작한다. */
 async function enableTiltSteering(){
-    if(typeof DeviceOrientationEvent === "undefined") return false;
+    if(typeof DeviceOrientationEvent === "undefined"){ tiltStatus = "unsupported"; return false; }
+    if(window.isSecureContext === false){ tiltStatus = "insecure"; return false; }
     try{
         if(typeof DeviceOrientationEvent.requestPermission === "function"){
             const res = await DeviceOrientationEvent.requestPermission();
-            if(res !== "granted") return false;
+            if(res !== "granted"){ tiltStatus = "denied"; return false; }
         }
     }catch(err){
+        tiltStatus = "denied";
         return false;
     }
-    window.addEventListener("deviceorientation", onDeviceOrientation);
+    if(!tiltListening){
+        window.addEventListener("deviceorientation", onDeviceOrientation);
+        tiltListening = true;
+    }
     calibrateTilt();
     // 실제 센서 값이 들어오는지 확인 (PC 브라우저/HTTP 환경 등은 이벤트가 없음)
     return new Promise(resolve => {
         const t0 = performance.now();
         const check = () => {
-            if(tilt.lastEvent > t0){ resolve(true); return; }
-            if(performance.now() - t0 > 1500){ resolve(false); return; }
+            if(tilt.lastEvent > t0){ tiltStatus = "active"; resolve(true); return; }
+            if(performance.now() - t0 > 1500){ tiltStatus = "no-data"; resolve(false); return; }
             setTimeout(check, 100);
         };
         check();

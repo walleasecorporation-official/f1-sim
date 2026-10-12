@@ -1,7 +1,10 @@
-# 정적 사이트(저장소 루트 전체)를 GitHub Pages 로 배포한다.
+# 정적 사이트(저장소 루트 전체)를 GitHub Pages 로 배포한다. (HTTPS → 휴대폰 기울기 조향 동작)
 # 빌드 과정은 없다: index.html + css/ + js/ (three.js 포함) 를 그대로 올린다.
-# 처음 한 번은 저장소 Settings → Pages → Build and deployment → Source 를
-# "GitHub Actions" 로 바꿔야 한다. (자세한 내용은 README.md 참고)
+#
+# 처음 한 번만 저장소 설정이 필요하다 (자세한 내용은 README.md "B) GitHub Pages"):
+#   1) 무료 플랜이면 저장소를 Public 으로 전환 (Settings → General → Danger Zone)
+#   2) Settings → Pages → Build and deployment → Source 를 "GitHub Actions" 로 선택
+# 설정 전에는 check 작업이 안내 메시지만 남기고 배포를 건너뛴다 (실패로 표시하지 않음).
 name: Deploy to GitHub Pages
 
 on:
@@ -22,7 +25,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - name: Check that GitHub Pages is enabled
+        id: pages
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const res = await github.rest.repos.getPages({ owner: context.repo.owner, repo: context.repo.repo });
+              core.setOutput('enabled', res.data.build_type === 'workflow' ? 'true' : 'false');
+              if (res.data.build_type !== 'workflow') {
+                core.warning('GitHub Pages 소스가 "GitHub Actions"가 아닙니다. Settings → Pages → Build and deployment → Source 를 "GitHub Actions"로 바꾸세요.');
+              } else {
+                core.notice('GitHub Pages 주소: ' + res.data.html_url);
+              }
+            } catch (e) {
+              core.setOutput('enabled', 'false');
+              core.notice('GitHub Pages 가 아직 켜져 있지 않아 배포를 건너뜁니다. ' +
+                '① (무료 플랜) Settings → General → Danger Zone → Change visibility → Public, ' +
+                '② Settings → Pages → Source: "GitHub Actions" 를 설정한 뒤 Actions 탭에서 이 워크플로를 다시 실행하세요.');
+            }
+
   deploy:
+    needs: check
+    if: needs.check.outputs.enabled == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

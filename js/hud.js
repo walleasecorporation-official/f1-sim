@@ -102,7 +102,8 @@ const startUI = {
     assists: raceSettings.assists,
     aeroAuto: raceSettings.aeroAuto,
     opponents: raceSettings.opponents,
-    sens: "normal"
+    sens: "normal",
+    steerMode: "tilt"          // 모바일 조향 방식: tilt | buttons
 };
 
 const COMPOUND_HINTS = {
@@ -149,6 +150,7 @@ function restoreStartSettings(){
     if(typeof saved.aeroAuto === "boolean") startUI.aeroAuto = saved.aeroAuto;
     if(Number.isInteger(saved.opponents) && saved.opponents >= 0 && saved.opponents <= MAX_OPPONENTS) startUI.opponents = saved.opponents;
     if(saved.sens === "low" || saved.sens === "normal" || saved.sens === "high") startUI.sens = saved.sens;
+    if(saved.steerMode === "tilt" || saved.steerMode === "buttons") startUI.steerMode = saved.steerMode;
 }
 
 function saveStartSettings(){
